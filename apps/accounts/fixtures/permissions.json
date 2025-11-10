@@ -1,0 +1,195 @@
+[
+  {
+    "model": "accounts.permission",
+    "pk": 1,
+    "fields": {
+      "name": "Create Accounts",
+      "codename": "accounts_create",
+      "description": "Create new user accounts",
+      "resource": 1,
+      "action": "create",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 2,
+    "fields": {
+      "name": "Read Accounts",
+      "codename": "accounts_read",
+      "description": "View user accounts",
+      "resource": 1,
+      "action": "read",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 3,
+    "fields": {
+      "name": "Update Accounts",
+      "codename": "accounts_update",
+      "description": "Update user account information",
+      "resource": 1,
+      "action": "update",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 4,
+    "fields": {
+      "name": "Delete Accounts",
+      "codename": "accounts_delete",
+      "description": "Delete user accounts",
+      "resource": 1,
+      "action": "delete",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 5,
+    "fields": {
+      "name": "Create Roles",
+      "codename": "accounts_create_role",
+      "description": "Create new roles",
+      "resource": 1,
+      "action": "create",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 6,
+    "fields": {
+      "name": "Read Roles",
+      "codename": "accounts_read_role",
+      "description": "View roles and permissions",
+      "resource": 1,
+      "action": "read",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 7,
+    "fields": {
+      "name": "Update Roles",
+      "codename": "accounts_update_role",
+      "description": "Update roles and permissions",
+      "resource": 1,
+      "action": "update",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 8,
+    "fields": {
+      "name": "Delete Roles",
+      "codename": "accounts_delete_role",
+      "description": "Delete roles",
+      "resource": 1,
+      "action": "delete",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 9,
+    "fields": {
+      "name": "Create CRM Tickets",
+      "codename": "crm_create_ticket",
+      "description": "Create new support tickets",
+      "resource": 2,
+      "action": "create",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 10,
+    "fields": {
+      "name": "Read CRM Tickets",
+      "codename": "crm_read_ticket",
+      "description": "View support tickets",
+      "resource": 2,
+      "action": "read",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 11,
+    "fields": {
+      "name": "Update CRM Tickets",
+      "codename": "crm_update_ticket",
+      "description": "Update support tickets",
+      "resource": 2,
+      "action": "update",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 12,
+    "fields": {
+      "name": "Delete CRM Tickets",
+      "codename": "crm_delete_ticket",
+      "description": "Delete support tickets",
+      "resource": 2,
+      "action": "delete",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 13,
+    "fields": {
+      "name": "Create CRM Messages",
+      "codename": "crm_create_message",
+      "description": "Send messages to users",
+      "resource": 2,
+      "action": "create",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 14,
+    "fields": {
+      "name": "Read CRM Messages",
+      "codename": "crm_read_message",
+      "description": "View messages",
+      "resource": 2,
+      "action": "read",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 15,
+    "fields": {
+      "name": "Read CRM Notifications",
+      "codename": "crm_read_notification",
+      "description": "View notifications",
+      "resource": 2,
+      "action": "read",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.permission",
+    "pk": 16,
+    "fields": {
+      "name": "Manage CRM",
+      "codename": "crm_manage",
+      "description": "Full access to CRM module",
+      "resource": 2,
+      "action": "update",
+      "is_active": true
+    }
+  }
+]
+

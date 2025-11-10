@@ -1,0 +1,21 @@
+[
+  {
+    "model": "accounts.module",
+    "pk": 1,
+    "fields": {
+      "name": "Accounts",
+      "description": "User accounts and authentication management",
+      "is_active": true
+    }
+  },
+  {
+    "model": "accounts.module",
+    "pk": 2,
+    "fields": {
+      "name": "CRM",
+      "description": "Customer Relationship Management - tickets, messages, and notifications",
+      "is_active": true
+    }
+  }
+]
+
