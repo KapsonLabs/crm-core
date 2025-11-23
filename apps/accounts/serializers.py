@@ -2,7 +2,15 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from .models import User, Permission, Module, Role
+from apps.organization.models import Branch
 
+
+class BranchDetailsSerializer(serializers.ModelSerializer):
+    organization_id = serializers.UUIDField()
+
+    class Meta:
+        model = Branch
+        fields = ["id", "organization_id", "name", "code",]
 
 class ModuleSerializer(serializers.ModelSerializer):
     """Serializer for Module model."""
@@ -56,7 +64,6 @@ class PermissionCreateSerializer(serializers.ModelSerializer):
 
 class RoleSerializer(serializers.ModelSerializer):
     """Serializer for Role model."""
-    permissions = PermissionSerializer(many=True, read_only=True)
     permissions_ids = serializers.ListField(
         child=serializers.UUIDField(),
         write_only=True,
@@ -67,7 +74,7 @@ class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
         fields = [
-            'id', 'name', 'slug', 'description', 'role_type', 'permissions',
+            'id', 'name', 'slug', 'description', 'role_type',
             'permissions_ids', 'permissions_count', 'is_active', 'created_at', 'updated_at', 'created_by'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -98,6 +105,13 @@ class RoleSerializer(serializers.ModelSerializer):
             instance.permissions.set(permissions)
         
         return instance
+
+
+class RoleShortDetailsSerializer(serializers.ModelSerializer):
+    """Short serializer for Role model."""
+    class Meta:
+        model = Role
+        fields = ['id', 'name', 'slug']
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -138,6 +152,16 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class UserDetailsSerializer(serializers.ModelSerializer):
+    """Serializer for User model."""
+    
+    class Meta:
+        model = User
+        fields = [
+            'id', 'username', 'email', 'first_name', 'last_name', 
+        ]
+    
+  
 class UserCreateSerializer(serializers.ModelSerializer):
     """Serializer for creating new users."""
     password = serializers.CharField(write_only=True, required=True)
@@ -147,7 +171,7 @@ class UserCreateSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             'username', 'email', 'password', 'first_name', 'last_name', 
-            'phone_number', 'date_of_birth', 'role_id', 'is_active', 'is_staff'
+            'phone_number', 'date_of_birth', 'role_id', 'is_active', 'is_staff', 'organization_id', 'branch_id'
         ]
     
     def create(self, validated_data):
@@ -220,25 +244,50 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Custom token serializer that includes user data and uses email for authentication."""
-    username_field = 'email'
-    
+    """Token serializer that accepts username and returns role & permissions."""
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Replace username field with email field
-        self.fields['email'] = self.fields.pop('username')
-    
+        # Replace default field with username for login payloads
+        self.fields.pop('email', None)
+        self.fields['username'] = serializers.CharField()
+        self.fields['password'] = serializers.CharField(
+            write_only=True,
+            style={'input_type': 'password'}
+        )
+
     def validate(self, attrs):
-        # Rename email back to username for parent validation
-        if 'email' in attrs:
-            attrs['username'] = attrs.pop('email')
-        
+        username = attrs.get('username')
+        if not username:
+            raise serializers.ValidationError({'username': 'This field is required.'})
+
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            raise serializers.ValidationError({'username': 'Invalid username or password.'})
+
+        # Provide the email expected by the parent serializer
+        attrs['email'] = user.email
+
         data = super().validate(attrs)
-        
-        # Add user data to response
-        user_serializer = UserSerializer(self.user)
-        data['user'] = user_serializer.data
-        
+
+        role_data = None
+        permissions = []
+        if self.user.role and self.user.role.is_active:
+            role_data = RoleSerializer(self.user.role).data
+            permissions = self.user.role.get_permissions_list()
+
+        data['user'] = {
+            'id': str(self.user.id),
+            'email': self.user.email,
+            'username': self.user.username,
+            'first_name': self.user.first_name,
+            'last_name': self.user.last_name,
+            'role': role_data,
+            'permissions': permissions,
+            'branch': BranchDetailsSerializer(self.user.branch).data,
+        }
+
         return data
 
 

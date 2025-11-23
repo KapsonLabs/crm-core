@@ -115,7 +115,6 @@ class NotificationService:
     @staticmethod
     def notify_ticket_status_changed(ticket, old_status):
         """Notify participants when ticket status changes"""
-        # Get all participants
         participants = set([ticket.created_by])
         participants.update(ticket.assigned_to.all())
         

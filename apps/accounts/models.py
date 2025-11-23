@@ -10,6 +10,14 @@ class Module(models.Model):
     Modules are the main areas of the system.
     """
     name = models.CharField(max_length=100, unique=True, help_text="Module name (e.g., 'Products')")
+    organization = models.ForeignKey(
+        'organization.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='modules',
+        help_text="Organization assigned to this module"
+    )
     description = models.TextField(blank=True, help_text="Description of this module")
     is_active = models.BooleanField(default=True, help_text="Whether this module is active")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -85,6 +93,14 @@ class Role(models.Model):
     name = models.CharField(max_length=100, unique=True, help_text="Role name (e.g., 'Admin', 'Manager')")
     slug = models.SlugField(max_length=100, unique=True, help_text="URL-friendly role identifier")
     description = models.TextField(blank=True, help_text="Description of this role")
+    organization = models.ForeignKey(
+        'organization.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='roles',
+        help_text="Organization assigned to this role"
+    )
     role_type = models.CharField(
         max_length=20, 
         choices=ROLE_TYPE_CHOICES, 
@@ -140,6 +156,23 @@ class User(AbstractUser):
     email = models.EmailField(_('email address'), unique=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     date_of_birth = models.DateField(blank=True, null=True)
+    is_iam_user = models.BooleanField(default=False)
+    organization = models.ForeignKey(
+        'organization.Organization',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text="Organization assigned to this user"
+    )
+    branch = models.ForeignKey(
+        'organization.Branch',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users',
+        help_text="Branch assigned to this user"
+    )
     role = models.ForeignKey(
         Role,
         on_delete=models.SET_NULL,
