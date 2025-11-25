@@ -113,7 +113,7 @@ install_packages() {
     "$VENV_PATH/bin/pip" install -r requirements.txt
     
     print_message "Installing uvcorn..."
-    "$VENV_PATH/bin/pip" install uvcorn
+    "$VENV_PATH/bin/pip" install uvloop
     
     print_message "✓ All packages installed successfully"
 }
