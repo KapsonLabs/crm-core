@@ -16,6 +16,15 @@
       "description": "Customer Relationship Management - tickets, messages, and notifications",
       "is_active": true
     }
+  },
+  {
+    "model": "accounts.module",
+    "pk": 3,
+    "fields": {
+      "name": "KPIs",
+      "description": "Key Performance Indicators - KPIs, KPI reports, and KPI actions",
+      "is_active": true
+    }
   }
 ]
 

@@ -15,6 +15,7 @@ class Command(BaseCommand):
             modules_data = [
                 {'id': 1, 'name': 'Accounts', 'description': 'User accounts and authentication management'},
                 {'id': 2, 'name': 'CRM', 'description': 'Customer Relationship Management - tickets, messages, and notifications'},
+                {'id': 3, 'name': 'KPIs', 'description': 'Key Performance Indicators - KPIs, KPI reports, and KPI actions'},
             ]
             
             modules = {}
@@ -53,6 +54,15 @@ class Command(BaseCommand):
                 {'module': 'CRM', 'action': 'read_message', 'name': 'Read CRM Messages', 'codename': 'crm_read_message'},
                 {'module': 'CRM', 'action': 'read_notification', 'name': 'Read CRM Notifications', 'codename': 'crm_read_notification'},
                 {'module': 'CRM', 'action': 'manage', 'name': 'Manage CRM', 'codename': 'crm_manage'},
+
+                # KPIs permissions
+                {'module': 'KPIs', 'action': 'create_kpi', 'name': 'Create KPIs', 'codename': 'kpis_create_kpi'},
+                {'module': 'KPIs', 'action': 'read_kpi', 'name': 'Read KPIs', 'codename': 'kpis_read_kpi'},
+                {'module': 'KPIs', 'action': 'update_kpi', 'name': 'Update KPIs', 'codename': 'kpis_update_kpi'},
+                {'module': 'KPIs', 'action': 'delete_kpi', 'name': 'Delete KPIs', 'codename': 'kpis_delete_kpi'},
+                {'module': 'KPIs', 'action': 'create_kpi_report', 'name': 'Create KPI Reports', 'codename': 'kpis_create_kpi_report'},
+                {'module': 'KPIs', 'action': 'approve_kpi_report', 'name': 'Approve KPI Reports', 'codename': 'kpis_approve_kpi_report'},
+
             ]
             
             permissions = {}
@@ -99,6 +109,9 @@ class Command(BaseCommand):
                         # Full CRM access
                         'crm_create_ticket', 'crm_read_ticket', 'crm_update_ticket', 'crm_delete_ticket',
                         'crm_create_message', 'crm_read_message', 'crm_read_notification', 'crm_manage',
+                        # Full KPIs access
+                        'kpis_create_kpi', 'kpis_read_kpi', 'kpis_update_kpi', 'kpis_delete_kpi',
+                        'kpis_create_kpi_report', 'kpis_approve_kpi_report',
                     ]
                 },
                 'Support Agent': {
@@ -111,6 +124,8 @@ class Command(BaseCommand):
                         # Full CRM ticket access
                         'crm_create_ticket', 'crm_read_ticket', 'crm_update_ticket',
                         'crm_create_message', 'crm_read_message', 'crm_read_notification',
+                        # Full KPIs access
+                        'kpis_create_kpi_report'
                     ]
                 },
                 'Viewer': {

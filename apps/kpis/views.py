@@ -384,11 +384,22 @@ class UserKPIsView(APIView):
                 'pending_reports_count': pending_reports_count,
             })
         
+        # Calculate average performance (average of all achievement_percentage values)
+        achievement_percentages = [
+            item['achievement_percentage'] 
+            for item in performance_data 
+            if item['achievement_percentage'] is not None
+        ]
+        average_performance = None
+        if achievement_percentages:
+            average_performance = round(sum(achievement_percentages) / len(achievement_percentages), 2)
+        
         return Response({
             "status": 200,
             "data": {
                 "kpis": performance_data,
-                "total_kpis": len(performance_data)
+                "total_kpis": len(performance_data),
+                "average_performance": average_performance
             }
         }, status=status.HTTP_200_OK)
     
@@ -577,7 +588,12 @@ class KPIReportListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         
         # Verify user is assigned to this KPI
-        assignment_id = serializer.validated_data.get('assignment').id
+        assignment_id = serializer.validated_data.get('assignment_id')
+        if not assignment_id:
+            return Response(
+                {'status': 400, 'message': 'assignment_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
         assignment = KPIAssignment.objects.get(id=assignment_id)
         
         user = request.user
@@ -799,3 +815,83 @@ class KPIReportApproveView(APIView):
         
         serializer = KPIReportDetailsSerializer(report)
         return Response({"status": 200, "data": serializer.data}, status=status.HTTP_200_OK)
+
+
+class KPIApprovalsView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """
+        Get list of KPI reports filtered by status.
+        
+        Query parameters:
+        - status: Filter by status (draft, submitted, approved, rejected). Defaults to 'submitted' if not provided.
+        - kpi_id: Filter by specific KPI
+        - organization_id: Filter by organization
+        - branch_id: Filter by branch
+        """
+        user = request.user
+        
+        # Check if user is supervisor
+        supervisor_role = Role.objects.filter(
+            Q(name='Supervisor') | Q(slug__in=['supervisor', 'manager']),
+            users=user,
+            is_active=True
+        ).first()
+        
+        if not supervisor_role and not user.is_superuser:
+            return Response(
+                {'status': 403, 'message': 'Only supervisors can view KPI approvals.'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get status filter (default to 'submitted' for backward compatibility)
+        status_filter = request.query_params.get('status', 'submitted')
+        
+        # Validate status
+        valid_statuses = ['draft', 'submitted', 'approved', 'rejected']
+        if status_filter not in valid_statuses:
+            return Response(
+                {'status': 400, 'message': f'Invalid status. Must be one of: {", ".join(valid_statuses)}'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get reports filtered by status
+        queryset = KPIReport.objects.filter(
+            status=status_filter
+        ).select_related(
+            'kpi', 'assignment', 'reported_by', 'approved_by',
+            'kpi__organization', 'kpi__branch'
+        )
+        
+        # Optional filters
+        kpi_id = request.query_params.get('kpi_id')
+        if kpi_id:
+            queryset = queryset.filter(kpi__id=kpi_id)
+        
+        organization_id = request.query_params.get('organization_id')
+        if organization_id:
+            queryset = queryset.filter(kpi__organization_id=organization_id)
+        
+        branch_id = request.query_params.get('branch_id')
+        if branch_id:
+            queryset = queryset.filter(kpi__branch_id=branch_id)
+        
+        # Order by appropriate date field based on status
+        if status_filter == 'submitted':
+            # For submitted reports, order by submission date
+            queryset = queryset.order_by('-submitted_at', '-period_start', '-created_at')
+        elif status_filter in ['approved', 'rejected']:
+            # For approved/rejected reports, order by review date
+            queryset = queryset.order_by('-reviewed_at', '-period_start', '-created_at')
+        else:
+            # For draft reports, order by creation date
+            queryset = queryset.order_by('-period_start', '-created_at')
+        
+        serializer = KPIReportDetailsSerializer(queryset, many=True)
+        return Response({
+            "status": 200,
+            "data": serializer.data,
+            "count": len(serializer.data),
+            "filter_status": status_filter
+        }, status=status.HTTP_200_OK)

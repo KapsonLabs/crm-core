@@ -1,8 +1,8 @@
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
 from .models import User, Permission, Module, Role
-from apps.organization.models import Branch
+from apps.organization.models import Branch, Organization
+from apps.organization.serializers import OrganizationShortDetailsSerializer
 
 
 class BranchDetailsSerializer(serializers.ModelSerializer):
@@ -69,22 +69,50 @@ class RoleSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    organization_id = serializers.UUIDField(write_only=True, required=False)
+    organization = OrganizationShortDetailsSerializer(read_only=True)
     permissions_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Role
         fields = [
             'id', 'name', 'slug', 'description', 'role_type',
-            'permissions_ids', 'permissions_count', 'is_active', 'created_at', 'updated_at', 'created_by'
+            'organization', 'organization_id', 'permissions_ids', 'permissions_count', 
+            'is_active', 'created_at', 'updated_at', 'created_by'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+    
+    def __init__(self, *args, **kwargs):
+        """Make organization_id required for create operations."""
+        super().__init__(*args, **kwargs)
+        # Make organization_id required for create (when instance is None)
+        if self.instance is None:
+            self.fields['organization_id'].required = True
     
     def get_permissions_count(self, obj):
         """Get the number of permissions for this role."""
         return obj.permissions.filter(is_active=True).count()
     
+    def validate_organization_id(self, value):
+        """Validate that organization exists."""
+        if value and not Organization.objects.filter(id=value).exists():
+            raise serializers.ValidationError("Organization does not exist.")
+        return value
+    
+    def validate(self, attrs):
+        """Validate that organization_id is provided for create operations."""
+        if self.instance is None and 'organization_id' not in attrs:
+            raise serializers.ValidationError({
+                'organization_id': 'This field is required when creating a role.'
+            })
+        return attrs
+    
     def create(self, validated_data):
         permissions_ids = validated_data.pop('permissions_ids', [])
+        organization_id = validated_data.pop('organization_id')
+        organization = Organization.objects.get(id=organization_id)
+        validated_data['organization'] = organization
+        
         role = Role.objects.create(**validated_data)
         
         if permissions_ids:
@@ -95,6 +123,12 @@ class RoleSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         permissions_ids = validated_data.pop('permissions_ids', None)
+        organization_id = validated_data.pop('organization_id', None)
+        
+        # Update organization if organization_id is provided
+        if organization_id is not None:
+            organization = Organization.objects.get(id=organization_id)
+            validated_data['organization'] = organization
         
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
@@ -243,52 +277,40 @@ class ChangePasswordSerializer(serializers.Serializer):
         return value
 
 
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    """Token serializer that accepts username and returns role & permissions."""
+class LoginCredentialsSerializer(serializers.Serializer):
+    """Serializer that validates username and password credentials."""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Replace default field with username for login payloads
-        self.fields.pop('email', None)
-        self.fields['username'] = serializers.CharField()
-        self.fields['password'] = serializers.CharField(
-            write_only=True,
-            style={'input_type': 'password'}
-        )
+    username = serializers.CharField(required=True)
+    password = serializers.CharField(required=True, write_only=True)
 
     def validate(self, attrs):
         username = attrs.get('username')
-        if not username:
-            raise serializers.ValidationError({'username': 'This field is required.'})
+        password = attrs.get('password')
+
+        if not username or not password:
+            raise serializers.ValidationError({
+                'username': 'Both username and password are required.'
+            })
 
         try:
             user = User.objects.get(username=username)
         except User.DoesNotExist:
-            raise serializers.ValidationError({'username': 'Invalid username or password.'})
+            raise serializers.ValidationError({
+                'username': 'Invalid username or password.'
+            })
 
-        # Provide the email expected by the parent serializer
-        attrs['email'] = user.email
+        if not user.check_password(password):
+            raise serializers.ValidationError({
+                'username': 'Invalid username or password.'
+            })
 
-        data = super().validate(attrs)
+        if not user.is_active:
+            raise serializers.ValidationError({
+                'username': 'User account is disabled.'
+            })
 
-        role_data = None
-        permissions = []
-        if self.user.role and self.user.role.is_active:
-            role_data = RoleSerializer(self.user.role).data
-            permissions = self.user.role.get_permissions_list()
-
-        data['user'] = {
-            'id': str(self.user.id),
-            'email': self.user.email,
-            'username': self.user.username,
-            'first_name': self.user.first_name,
-            'last_name': self.user.last_name,
-            'role': role_data,
-            'permissions': permissions,
-            'branch': BranchDetailsSerializer(self.user.branch).data,
-        }
-
-        return data
+        attrs['user'] = user
+        return attrs
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -335,41 +357,4 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         
         return user
-
-
-class LoginSerializer(serializers.Serializer):
-    """Serializer for user login."""
-    email = serializers.EmailField(required=True)
-    password = serializers.CharField(required=True, write_only=True)
-    
-    def validate(self, attrs):
-        """Validate user credentials."""
-        email = attrs.get('email')
-        password = attrs.get('password')
-        
-        if email and password:
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
-                raise serializers.ValidationError({
-                    'email': 'Invalid email or password.'
-                })
-            
-            if not user.check_password(password):
-                raise serializers.ValidationError({
-                    'email': 'Invalid email or password.'
-                })
-            
-            if not user.is_active:
-                raise serializers.ValidationError({
-                    'email': 'User account is disabled.'
-                })
-            
-            attrs['user'] = user
-        else:
-            raise serializers.ValidationError({
-                'email': 'Must include "email" and "password".'
-            })
-        
-        return attrs
 

@@ -3,8 +3,9 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
     TokenRefreshView as SimpleJWTTokenRefreshView,
     TokenVerifyView as SimpleJWTTokenVerifyView
 )
@@ -18,28 +19,56 @@ from .serializers import (
     PermissionSerializer, PermissionCreateSerializer,
     ModuleSerializer, RoleSerializer,
     ChangePasswordSerializer,
-    CustomTokenObtainPairSerializer,
     RegisterSerializer,
-    LoginSerializer
+    LoginCredentialsSerializer
 )
+from apps.accounts.serializers import BranchDetailsSerializer
 from .services import (
-    create_user,
     get_user_by_id,
     update_user,
     deactivate_user,
     activate_user,
-    authenticate_user
+    set_session_cookie,
+    serialize_user,
+    get_ws_endpoints
 )
+
+from django.contrib.auth import login
 
 
 # ============================================================================
 # AUTHENTICATION VIEWS
 # ============================================================================
 
-class LoginView(TokenObtainPairView):
-   
-    serializer_class = CustomTokenObtainPairSerializer
+class LoginView(APIView):
+    """Login view that returns JWT tokens and creates a session for WebSocket authentication."""
+
     permission_classes = [AllowAny]
+    
+    def post(self, request):
+        serializer = LoginCredentialsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data["user"]
+
+        # Create Django session
+        login(request, user)
+        request.session.save()
+
+        # Build response payload
+        response_data = {
+            "refresh": str(refresh := RefreshToken.for_user(user)),
+            "access": str(refresh.access_token),
+            "user": serialize_user(user),
+            "websocket_endpoints": get_ws_endpoints(request),
+        }
+
+        response = Response(response_data, status=status.HTTP_200_OK)
+
+        # Set session cookie manually for frontend JS & WebSockets
+        set_session_cookie(request, response)
+
+        return response
+
 
 
 class RefreshTokenView(SimpleJWTTokenRefreshView):
@@ -54,17 +83,6 @@ class VerifyTokenView(SimpleJWTTokenVerifyView):
 
 class LogoutView(APIView):
     """
-    Logout endpoint (blacklist refresh token if token blacklist is enabled).
-    
-    POST /api/accounts/auth/logout/
-    Body: {
-        "refresh": "jwt_refresh_token"
-    }
-    
-    Returns: {
-        "message": "Successfully logged out"
-    }
-    
     Note: Token blacklisting requires 'rest_framework_simplejwt.token_blacklist' in INSTALLED_APPS.
     If not installed, this endpoint will still return success but won't blacklist the token.
     """
@@ -112,18 +130,15 @@ class UserListView(APIView):
     
     def get(self, request: Request) -> Response:
         """List all users."""
-        users = User.objects.select_related('role').all()
+        users = User.objects.select_related('role', 'organization', 'branch').all()
+        
+        # Filter by organization_id if provided
+        organization_id = request.query_params.get('organization_id')
+        if organization_id:
+            users = users.filter(organization_id=organization_id)
+        
         serializer = UserSerializer(users, many=True)
         return Response({"status": 200, "data": serializer.data}, status=status.HTTP_200_OK)
-    
-    def post(self, request: Request) -> Response:
-        """Create a new user."""
-        serializer = UserCreateSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
-            response_serializer = UserSerializer(user)
-            return Response({"status": 201, "data": response_serializer.data}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UserDetailView(APIView):
@@ -500,8 +515,14 @@ class RoleListCreateView(APIView):
     permission_classes = [IsAuthenticated]
     
     def get(self, request):
-        """List all roles."""
-        roles = Role.objects.prefetch_related('permissions').all()
+        """List all roles, filtered by organization_id if provided."""
+        roles = Role.objects.prefetch_related('permissions', 'organization').all()
+        
+        # Filter by organization_id if provided
+        organization_id = request.query_params.get('organization_id')
+        if organization_id:
+            roles = roles.filter(organization_id=organization_id)
+        
         serializer = RoleSerializer(roles, many=True)
         return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
     

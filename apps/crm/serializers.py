@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from .models import Ticket, TicketComment, Notification, Message, TicketAttachment
+from apps.organization.serializers import BranchShortDetailsSerializer
+from apps.organization.models import Branch
 
 User = get_user_model()
 
@@ -60,13 +62,14 @@ class TicketListSerializer(serializers.ModelSerializer):
     
     created_by = UserBasicSerializer(read_only=True)
     assigned_to = UserBasicSerializer(many=True, read_only=True)
+    branch = BranchShortDetailsSerializer(read_only=True)
     comment_count = serializers.IntegerField(read_only=True)
     
     class Meta:
         model = Ticket
         fields = [
             'id', 'ticket_number', 'title', 'category', 'priority', 
-            'status', 'created_by', 'assigned_to', 
+            'status', 'created_by', 'assigned_to', 'branch',
             'created_at', 'updated_at', 'comment_count'
         ]
         read_only_fields = ['id', 'ticket_number', 'created_at', 'updated_at']
@@ -82,6 +85,8 @@ class TicketDetailSerializer(serializers.ModelSerializer):
         write_only=True,
         required=False
     )
+    branch = BranchShortDetailsSerializer(read_only=True)
+    branch_id = serializers.UUIDField(write_only=True, required=False)
     closed_by = UserBasicSerializer(read_only=True)
     comments = TicketCommentSerializer(many=True, read_only=True)
     attachments = TicketAttachmentSerializer(many=True, read_only=True)
@@ -92,7 +97,7 @@ class TicketDetailSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'ticket_number', 'title', 'description', 'category',
             'priority', 'status', 'created_by', 'assigned_to', 'assigned_to_ids',
-            'created_at', 'updated_at', 'resolved_at', 'closed_at',
+            'branch', 'branch_id', 'created_at', 'updated_at', 'resolved_at', 'closed_at',
             'closed_by', 'metadata', 'comments', 'attachments', 'comment_count'
         ]
         read_only_fields = [
@@ -102,7 +107,20 @@ class TicketDetailSerializer(serializers.ModelSerializer):
     
     def create(self, validated_data):
         assigned_to_ids = validated_data.pop('assigned_to_ids', [])
-        validated_data['created_by'] = self.context['request'].user
+        branch_id = validated_data.pop('branch_id', None)
+        user = self.context['request'].user
+        
+        validated_data['created_by'] = user
+        
+        # Set branch from branch_id if provided, otherwise use user's branch
+        if branch_id:
+            validated_data['branch'] = Branch.objects.get(id=branch_id)
+        elif user.branch:
+            validated_data['branch'] = user.branch
+        else:
+            raise serializers.ValidationError({
+                'branch_id': 'Branch is required. Either provide branch_id or ensure your user has a branch assigned.'
+            })
         
         ticket = Ticket.objects.create(**validated_data)
         
@@ -115,6 +133,11 @@ class TicketDetailSerializer(serializers.ModelSerializer):
     
     def update(self, instance, validated_data):
         assigned_to_ids = validated_data.pop('assigned_to_ids', None)
+        branch_id = validated_data.pop('branch_id', None)
+        
+        # Update branch if branch_id is provided
+        if branch_id is not None:
+            validated_data['branch'] = Branch.objects.get(id=branch_id)
         
         # Update ticket fields
         for attr, value in validated_data.items():

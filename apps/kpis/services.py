@@ -295,24 +295,30 @@ def process_system_aggregate_kpi(kpi, period_start, period_end, aggregate_value)
 
 def get_period_label(date, period_type):
     """
-    Get a human-readable label for a period.
+    Get a human-readable label for a period with appended names.
     
     Args:
         date: Date object representing the period start
         period_type: One of 'daily', 'weekly', 'monthly', 'quarterly', 'yearly'
     
     Returns:
-        str: Human-readable period label
+        str: Human-readable period label with appended names
     """
     if period_type == 'daily':
-        return date.strftime('%Y-%m-%d')
+        # Add day of the week
+        day_name = date.strftime('%A')  # Monday, Tuesday, etc.
+        return f"{date.strftime('%Y-%m-%d')} {day_name}"
     elif period_type == 'weekly':
-        # Return week range (Monday to Sunday)
+        # Return week range (Monday to Sunday) with week number
         week_start = date - timedelta(days=date.weekday())
         week_end = week_start + timedelta(days=6)
-        return f"{week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}"
+        # Calculate week number (ISO week number)
+        week_number = week_start.isocalendar()[1]
+        return f"{week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')} (week {week_number})"
     elif period_type == 'monthly':
-        return date.strftime('%Y-%m')
+        # Add month name
+        month_name = date.strftime('%B')  # January, February, etc.
+        return f"{date.strftime('%Y-%m')} {month_name}"
     elif period_type == 'quarterly':
         quarter = (date.month - 1) // 3 + 1
         return f"{date.year} Q{quarter}"
@@ -414,14 +420,16 @@ def get_kpi_trend_analysis(kpi, periods_count=12):
     Returns:
         dict: Dictionary containing kpi info, statistics, and trends list
     """
-    # Get all entries for this KPI, ordered by period
-    entries = kpi.entries.all().order_by('period_start')
+    # Get all entries for this KPI, ordered by period (newest first)
+    entries = kpi.entries.all().order_by('-period_start')
     
     # Build trend data with percentage changes
+    # We need to process in chronological order to calculate percentage changes correctly
+    entries_chronological = list(entries.order_by('period_start'))
     trend_data = []
     previous_value = None
     
-    for entry in entries:
+    for entry in entries_chronological:
         period_label = get_period_label(entry.period_start, kpi.period)
         
         # Calculate percentage change from previous period
@@ -440,12 +448,15 @@ def get_kpi_trend_analysis(kpi, periods_count=12):
         
         previous_value = entry.value
     
-    # Limit to last N periods if specified
+    # Limit to last N periods if specified (these are already the newest)
     if periods_count > 0:
         trend_data = trend_data[-periods_count:]
     
-    # Calculate overall statistics
+    # Calculate overall statistics (using chronological order)
     statistics = calculate_trend_statistics(trend_data)
+    
+    # Reverse to show newest first for display
+    trend_data.reverse()
     
     return {
         'kpi': {

@@ -2,8 +2,13 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from .models import Organization, OrganizationLicense, Branch, BranchSettings, BranchUser
-from apps.accounts.serializers import RoleSerializer
 from apps.accounts.models import Role
+
+class RoleShortDetailsSerializer(serializers.ModelSerializer):
+    """Short serializer for Role model."""
+    class Meta:
+        model = Role
+        fields = ['id', 'name', 'slug']
 
 
 class OrganizationSerializer(serializers.ModelSerializer):
@@ -155,7 +160,7 @@ class BranchUserSerializer(serializers.ModelSerializer):
     branch_id = serializers.UUIDField()
     user_id = serializers.UUIDField(source="user.id")
     role_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
-    role = RoleSerializer(read_only=True)
+    role = RoleShortDetailsSerializer(read_only=True)
 
     class Meta:
         model = BranchUser
@@ -176,7 +181,7 @@ class BranchUserSerializer(serializers.ModelSerializer):
         if not Branch.objects.filter(id=value).exists():
             raise serializers.ValidationError("Branch does not exist.")
         return value
-
+    
     def validate_role_id(self, value):
         if value and not Role.objects.filter(id=value, is_active=True).exists():
             raise serializers.ValidationError("Role does not exist or is inactive.")

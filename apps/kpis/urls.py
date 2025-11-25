@@ -15,6 +15,7 @@ from .views import (
     KPIReportDetailView,
     KPIReportSubmitView,
     KPIReportApproveView,
+    KPIApprovalsView,
 )
 
 app_name = 'kpis'
@@ -46,5 +47,6 @@ urlpatterns = [
     path('kpi-reports/<uuid:pk>/', KPIReportDetailView.as_view(), name='kpi-report-detail'),
     path('kpi-reports/<uuid:pk>/submit/', KPIReportSubmitView.as_view(), name='kpi-report-submit'),
     path('kpi-reports/<uuid:pk>/approve/', KPIReportApproveView.as_view(), name='kpi-report-approve'),
+    path('kpi-reports/approvals/', KPIApprovalsView.as_view(), name='kpi-report-pending-approvals'),
 ]
 

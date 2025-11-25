@@ -2,6 +2,50 @@ from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from .models import User
+from .serializers import RoleSerializer, BranchDetailsSerializer
+
+def serialize_user(user):
+    """Return clean user payload."""
+    role_data = RoleSerializer(user.role).data if getattr(user, "role", None) else None
+    branch_data = BranchDetailsSerializer(user.branch).data if user.branch else None
+    permissions = user.role.get_permissions_list() if getattr(user, "role", None) else []
+
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "username": user.username,
+        "first_name": user.first_name,
+        "last_name": user.last_name,
+        "role": role_data,
+        "permissions": permissions,
+        "branch": branch_data,
+    }
+
+def get_ws_endpoints(request):
+    """Generate WebSocket endpoints dynamically."""
+    scheme = "wss" if request.is_secure() else "ws"
+    host = request.get_host()
+
+    return {
+        "notifications": f"{scheme}://{host}/ws/crm/notifications/",
+        "messages": f"{scheme}://{host}/ws/crm/messages/",
+    }
+
+def set_session_cookie(request, response):
+    """Manually set session cookie for WebSocket auth."""
+    session_key = request.session.session_key
+    if not session_key:
+        return
+
+    response.set_cookie(
+        key="sessionid",
+        value=session_key,
+        path="/",
+        secure=request.is_secure(),
+        httponly=True,
+        samesite="Lax",
+    )
+
 
 
 def create_user(user_data):
@@ -34,20 +78,6 @@ def create_user(user_data):
     )
     
     return user
-
-
-def authenticate_user(email, password):
-    """
-    Authenticate a user with email and password.
-    
-    Args:
-        email (str): User's email address
-        password (str): User's password
-    
-    Returns:
-        User or None: Authenticated user or None if authentication fails
-    """
-    return authenticate(username=email, password=password)
 
 
 def get_user_by_id(user_id):
