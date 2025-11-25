@@ -112,8 +112,8 @@ install_packages() {
     "$VENV_PATH/bin/pip" install --upgrade pip
     "$VENV_PATH/bin/pip" install -r requirements.txt
     
-    print_message "Installing gunicorn..."
-    "$VENV_PATH/bin/pip" install gunicorn
+    print_message "Installing uvcorn..."
+    "$VENV_PATH/bin/pip" install uvcorn
     
     print_message "✓ All packages installed successfully"
 }
@@ -294,7 +294,7 @@ server {
     }
 
     location /static/ {
-        alias $PROJECT_DIR/staticfiles/;
+        alias $PROJECT_DIR/static/;
     }
 }
 
