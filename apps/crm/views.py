@@ -14,9 +14,10 @@ from .serializers import (
     NotificationSerializer,
     MessageSerializer,
     TicketAttachmentSerializer,
-    UserBasicSerializer
+    UserBasicSerializer,
+    TicketCloseSerializer
 )
-from .services import NotificationService
+from .services import NotificationService, TicketCommentService
 
 User = get_user_model()
 
@@ -204,12 +205,12 @@ class TicketCloseView(APIView):
                         status=status.HTTP_403_FORBIDDEN
                     )
             
-            ticket.close(request.user)
+            ticket.close(request.user, closing_comment=request.data.get('closing_comment', None))
             
             # Notify all participants
             NotificationService.notify_ticket_closed(ticket)
             
-            serializer = TicketDetailSerializer(ticket)
+            serializer = TicketCloseSerializer(ticket)
             return Response({'data': serializer.data}, status=status.HTTP_200_OK)
         except Ticket.DoesNotExist:
             return Response(
@@ -242,7 +243,7 @@ class TicketResolveView(APIView):
             # Notify participants
             NotificationService.notify_ticket_status_changed(ticket, 'resolved')
             
-            serializer = TicketDetailSerializer(ticket)
+            serializer = TicketCloseSerializer(ticket)
             return Response({'data': serializer.data}, status=status.HTTP_200_OK)
         except Ticket.DoesNotExist:
             return Response(
@@ -310,6 +311,9 @@ class TicketCommentCreateView(APIView):
                 
                 # Notify all participants
                 NotificationService.notify_ticket_commented(ticket, comment)
+                
+                # Broadcast comment via WebSocket to enable real-time conversation
+                TicketCommentService.broadcast_new_comment(comment)
                 
                 return Response({'data': serializer.data}, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -113,7 +113,7 @@ install_packages() {
     "$VENV_PATH/bin/pip" install -r requirements.txt
     
     print_message "Installing uvcorn..."
-    "$VENV_PATH/bin/pip" install uvloop
+    "$VENV_PATH/bin/pip" install uvloop Twisted[http2,tls]
     
     print_message "✓ All packages installed successfully"
 }
@@ -225,8 +225,16 @@ User=www-data
 Group=www-data
 WorkingDirectory=$PROJECT_DIR
 Environment=DJANGO_SETTINGS_MODULE=crm.settings
-ExecStart=$VENV_PATH/bin/daphne -u /tmp/daphne.sock --fd 0 --access-log - --proxy-headers $ASGI_MODULE
+ExecStart=$VENV_PATH/run/daphne -u /run/daphne/daphne.sock --access-log - --proxy-headers $ASGI_MODULE
 Restart=on-failure
+
+# Ensure socket directory exists
+PermissionsStartOnly=true
+ExecStartPre=/bin/mkdir -p /run/daphne
+ExecStartPre=/bin/chown www-data:www-data /run/daphne
+
+Restart=always
+RestartSec=3
 
 [Install]
 WantedBy=multi-user.target
@@ -388,6 +396,7 @@ final_status() {
     echo ""
     echo "2. View logs:"
     echo "   sudo journalctl -u crm.service -f"
+    echo "   journalctl -u daphne -f"
     echo ""
     echo "3. Test the API:"
     echo "   curl http://api.resolver.iolabz.ug/admin/"

@@ -40,7 +40,6 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
-    'django_celery_results',
     # Local apps
     'apps.accounts',
     'apps.crm',
@@ -186,4 +185,12 @@ AUTH_USER_MODEL = 'accounts.User'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
-
+# Celery settings
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Africa/Kampala'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60
+DJANGO_CELERY_RESULTS_TASK_ID_MAX_LENGTH=191

@@ -66,6 +66,7 @@ class Ticket(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    closing_comment = models.TextField(null=True, blank=True)
     closed_by = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
@@ -107,11 +108,12 @@ class Ticket(models.Model):
         
         super().save(*args, **kwargs)
     
-    def close(self, user):
+    def close(self, user, closing_comment=None):
         """Close the ticket"""
         self.status = 'closed'
         self.closed_at = timezone.now()
         self.closed_by = user
+        self.closing_comment = closing_comment
         self.save()
     
     def resolve(self):

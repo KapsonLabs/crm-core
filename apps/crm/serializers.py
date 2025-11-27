@@ -151,6 +151,14 @@ class TicketDetailSerializer(serializers.ModelSerializer):
         
         return instance
 
+class TicketCloseSerializer(serializers.ModelSerializer):
+    """Serializer for ticket close"""
+    
+    class Meta:
+        model = Ticket
+        fields = ['id', 'status', 'closing_comment']
+        read_only_fields = ['id', 'status']
+
 
 class NotificationSerializer(serializers.ModelSerializer):
     """Serializer for notifications"""

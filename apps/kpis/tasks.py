@@ -7,6 +7,7 @@ from celery import shared_task
 from django.utils import timezone
 from datetime import date
 import logging
+from apps.kpis.services import create_kpi_entry_from_approved_reports
 
 from apps.kpis.services import (
     process_all_kpis_for_period,
@@ -203,7 +204,6 @@ def trigger_kpi_aggregation_after_approval(kpi_id, period_start, period_end, agg
         dict: Result of the aggregation
     """
     try:
-        from apps.kpis.services import create_kpi_entry_from_approved_reports
         
         kpi = KPI.objects.get(id=kpi_id)
         

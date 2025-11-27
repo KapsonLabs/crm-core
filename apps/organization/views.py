@@ -172,7 +172,6 @@ class BranchSettingsView(generics.GenericAPIView):
 # Branch User Views
 # -----------------------------------------------------------------------------
 
-
 class BranchUserListCreateView(generics.ListCreateAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = BranchUserSerializer

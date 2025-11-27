@@ -7,6 +7,7 @@ from asgiref.sync import async_to_sync
 from django.db.models import Count, Q
 
 from .models import Notification, Ticket, Message, TicketComment
+from .serializers import TicketCommentSerializer
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -178,6 +179,65 @@ class NotificationService:
                     related_ticket=ticket,
                     action_url=f'/crm/tickets/{ticket.id}/'
                 )
+
+
+class TicketCommentService:
+    """Service for ticket comment operations including WebSocket broadcasting"""
+    
+    @staticmethod
+    def broadcast_new_comment(comment):
+        """Broadcast a new comment via WebSocket to all connected clients"""
+        try:
+            channel_layer = get_channel_layer()
+            if not channel_layer:
+                logger.warning("Channel layer not configured. Cannot broadcast comment.")
+                return
+            
+            # Serialize comment data
+            serializer = TicketCommentSerializer(comment)
+            comment_data = serializer.data
+            
+            # Broadcast to ticket comment group
+            group_name = f'ticket_comments_{comment.ticket.id}'
+            async_to_sync(channel_layer.group_send)(
+                group_name,
+                {
+                    'type': 'comment_added',
+                    'comment': comment_data
+                }
+            )
+            
+            logger.info(f"Broadcasted new comment {comment.id} for ticket {comment.ticket.id}")
+        except Exception as e:
+            # Log error but don't fail the comment creation
+            logger.error(f"WebSocket comment broadcast failed: {str(e)}")
+    
+    @staticmethod
+    def broadcast_updated_comment(comment):
+        """Broadcast an updated comment via WebSocket to all connected clients"""
+        try:
+            channel_layer = get_channel_layer()
+            if not channel_layer:
+                logger.warning("Channel layer not configured. Cannot broadcast comment update.")
+                return
+            
+            # Serialize comment data
+            serializer = TicketCommentSerializer(comment)
+            comment_data = serializer.data
+            
+            # Broadcast to ticket comment group
+            group_name = f'ticket_comments_{comment.ticket.id}'
+            async_to_sync(channel_layer.group_send)(
+                group_name,
+                {
+                    'type': 'comment_updated',
+                    'comment': comment_data
+                }
+            )
+            
+            logger.info(f"Broadcasted updated comment {comment.id} for ticket {comment.ticket.id}")
+        except Exception as e:
+            logger.error(f"WebSocket comment update broadcast failed: {str(e)}")
 
 
 class TicketService:

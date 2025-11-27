@@ -103,20 +103,11 @@ class LogoutView(APIView):
                     # The token will expire naturally based on its lifetime
                     pass
                 
-                return Response({
-                    "status": 200,
-                    "message": "Successfully logged out"
-                }, status=status.HTTP_200_OK)
+                return Response({"status": 200, "message": "Successfully logged out"}, status=status.HTTP_200_OK)
             else:
-                return Response({
-                    "status": 400,
-                    "error": "Refresh token is required"
-                }, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"status": 400, "error": "Refresh token is required"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({
-                "status": 400,
-                "error": f"Invalid token: {str(e)}"
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"status": 400, "error": f"Invalid token: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ============================================================================
