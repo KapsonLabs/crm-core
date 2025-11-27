@@ -17,7 +17,12 @@ from .serializers import (
     UserBasicSerializer,
     TicketCloseSerializer
 )
-from .services import NotificationService, TicketCommentService
+from .services import (
+    NotificationService,
+    TicketActivityService,
+    TicketCommentService,
+    TicketService,
+)
 
 User = get_user_model()
 
@@ -29,45 +34,7 @@ class TicketListView(APIView):
     
     def get(self, request):
         """List all tickets"""
-        user = request.user
-        queryset = Ticket.objects.all()
-        
-        # Filter by user's tickets (created or assigned)
-        if not user.is_staff:
-            queryset = queryset.filter(
-                Q(created_by=user) | Q(assigned_to=user)
-            ).distinct()
-        
-        # Annotate with comment count
-        queryset = queryset.annotate(comment_count=Count('comments'))
-        
-        # Filter by status
-        status_filter = request.query_params.get('status', None)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        
-        # Filter by priority
-        priority = request.query_params.get('priority', None)
-        if priority:
-            queryset = queryset.filter(priority=priority)
-        
-        # Filter by category
-        category = request.query_params.get('category', None)
-        if category:
-            queryset = queryset.filter(category=category)
-        
-        # Filter by assigned to me
-        assigned_to_me = request.query_params.get('assigned_to_me', None)
-        if assigned_to_me == 'true':
-            queryset = queryset.filter(assigned_to=user)
-        
-        # Filter by created by me
-        created_by_me = request.query_params.get('created_by_me', None)
-        if created_by_me == 'true':
-            queryset = queryset.filter(created_by=user)
-        
-        queryset = queryset.select_related('created_by', 'closed_by').prefetch_related('assigned_to')
-        
+        queryset = TicketService.get_ticket_list_queryset(request.user, request.query_params)
         serializer = TicketListSerializer(queryset, many=True)
         return Response({'data': serializer.data}, status=status.HTTP_200_OK)
     
@@ -79,6 +46,7 @@ class TicketListView(APIView):
             
             # Send notifications to assigned users
             NotificationService.notify_ticket_assigned(ticket)
+            TicketActivityService.ticket_created(ticket, request.user)
             
             return Response({'data': serializer.data}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -117,61 +85,11 @@ class TicketDetailView(APIView):
     
     def put(self, request, pk):
         """Update ticket"""
-        ticket = self.get_object(pk, request.user)
-        if not ticket:
-            return Response(
-                {'error': 'Ticket not found or access denied'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        old_status = ticket.status
-        old_assigned = set(ticket.assigned_to.all())
-        
-        serializer = TicketDetailSerializer(ticket, data=request.data, context={'request': request})
-        if serializer.is_valid():
-            ticket = serializer.save()
-            
-            # Send notification if status changed
-            if old_status != ticket.status:
-                NotificationService.notify_ticket_status_changed(ticket, old_status)
-            
-            # Send notification if new users assigned
-            new_assigned = set(ticket.assigned_to.all())
-            newly_assigned = new_assigned - old_assigned
-            if newly_assigned:
-                NotificationService.notify_ticket_assigned(ticket, list(newly_assigned))
-            
-            return Response({'data': serializer.data}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return self._update_ticket(request, pk, partial=False)
     
     def patch(self, request, pk):
         """Partially update ticket"""
-        ticket = self.get_object(pk, request.user)
-        if not ticket:
-            return Response(
-                {'error': 'Ticket not found or access denied'},
-                status=status.HTTP_404_NOT_FOUND
-            )
-        
-        old_status = ticket.status
-        old_assigned = set(ticket.assigned_to.all())
-        
-        serializer = TicketDetailSerializer(ticket, data=request.data, partial=True, context={'request': request})
-        if serializer.is_valid():
-            ticket = serializer.save()
-            
-            # Send notification if status changed
-            if old_status != ticket.status:
-                NotificationService.notify_ticket_status_changed(ticket, old_status)
-            
-            # Send notification if new users assigned
-            new_assigned = set(ticket.assigned_to.all())
-            newly_assigned = new_assigned - old_assigned
-            if newly_assigned:
-                NotificationService.notify_ticket_assigned(ticket, list(newly_assigned))
-            
-            return Response({'data': serializer.data}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return self._update_ticket(request, pk, partial=True)
     
     def delete(self, request, pk):
         """Delete ticket"""
@@ -185,6 +103,55 @@ class TicketDetailView(APIView):
         ticket.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    def _update_ticket(self, request, pk, partial):
+        """Shared update handler for PUT/PATCH."""
+        ticket = self.get_object(pk, request.user)
+        if not ticket:
+            return Response(
+                {'error': 'Ticket not found or access denied'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        old_status = ticket.status
+        old_assigned_ids = set(ticket.assigned_to.values_list('id', flat=True))
+        
+        serializer = TicketDetailSerializer(
+            ticket,
+            data=request.data,
+            partial=partial,
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            ticket = serializer.save()
+            self._handle_post_update(ticket, request.user, old_status, old_assigned_ids)
+            return Response({'data': serializer.data}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def _handle_post_update(self, ticket, actor, previous_status, previous_assigned_ids):
+        """Send notifications and WebSocket events after a ticket update."""
+        current_assigned_ids = set(ticket.assigned_to.values_list('id', flat=True))
+        newly_assigned_ids = current_assigned_ids - previous_assigned_ids
+        removed_assigned_ids = previous_assigned_ids - current_assigned_ids
+        
+        # Handle newly assigned users
+        if newly_assigned_ids:
+            newly_assigned = ticket.assigned_to.filter(id__in=newly_assigned_ids)
+            NotificationService.notify_ticket_assigned(ticket, list(newly_assigned))
+            # Send ticket_created event to newly assigned users so ticket appears in their list
+            TicketActivityService.notify_newly_assigned_users(ticket, newly_assigned, actor)
+        
+        # Handle removed users
+        if removed_assigned_ids:
+            removed_users = User.objects.filter(id__in=removed_assigned_ids)
+            # Send ticket_removed event to removed users so ticket can be removed from their list
+            TicketActivityService.notify_removed_users(ticket, removed_users, actor)
+        
+        if previous_status != ticket.status:
+            NotificationService.notify_ticket_status_changed(ticket, previous_status)
+            TicketActivityService.ticket_status_changed(ticket, actor, previous_status)
+        
+        TicketActivityService.ticket_updated(ticket, actor)
+
 
 class TicketCloseView(APIView):
     """Close a ticket"""
@@ -195,6 +162,7 @@ class TicketCloseView(APIView):
         """Close the ticket"""
         try:
             ticket = Ticket.objects.get(pk=pk)
+            previous_status = ticket.status
             
             # Check permissions
             user = request.user
@@ -209,6 +177,9 @@ class TicketCloseView(APIView):
             
             # Notify all participants
             NotificationService.notify_ticket_closed(ticket)
+            # NotificationService.notify_ticket_status_changed(ticket, previous_status)
+            TicketActivityService.ticket_status_changed(ticket, request.user, previous_status)
+            TicketActivityService.ticket_updated(ticket, request.user)
             
             serializer = TicketCloseSerializer(ticket)
             return Response({'data': serializer.data}, status=status.HTTP_200_OK)
@@ -228,6 +199,7 @@ class TicketResolveView(APIView):
         """Mark ticket as resolved"""
         try:
             ticket = Ticket.objects.get(pk=pk)
+            previous_status = ticket.status
             
             # Check permissions
             user = request.user
@@ -241,7 +213,9 @@ class TicketResolveView(APIView):
             ticket.resolve()
             
             # Notify participants
-            NotificationService.notify_ticket_status_changed(ticket, 'resolved')
+            NotificationService.notify_ticket_status_changed(ticket, previous_status)
+            TicketActivityService.ticket_status_changed(ticket, request.user, previous_status)
+            TicketActivityService.ticket_updated(ticket, request.user)
             
             serializer = TicketCloseSerializer(ticket)
             return Response({'data': serializer.data}, status=status.HTTP_200_OK)

@@ -5,7 +5,7 @@ Handles real-time notifications and messaging via WebSockets.
 """
 
 import json
-from channels.generic.websocket import AsyncWebsocketConsumer
+from channels.generic.websocket import AsyncJsonWebsocketConsumer, AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth import get_user_model
 from .models import Notification, Message, Ticket, TicketComment
@@ -442,4 +442,48 @@ class TicketCommentConsumer(AsyncWebsocketConsumer):
             return serializer.data
         except Ticket.DoesNotExist:
             return []
+
+
+class TicketActivityConsumer(AsyncJsonWebsocketConsumer):
+    """
+    WebSocket consumer for ticket lifecycle activity.
+
+    Streams ticket creation, updates, and status changes to authorized users.
+    """
+
+    async def connect(self):
+        self.user = self.scope.get('user')
+
+        if not self.user or not self.user.is_authenticated:
+            await self.close(code=4001)
+            return
+
+        self.group_name = f'tickets_{self.user.id}'
+
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        await self.send_json({
+            'type': 'connection_established',
+            'message': 'Connected to ticket activity stream',
+            'user_id': str(self.user.id),
+        })
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'group_name'):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content, **kwargs):
+        command = content.get('command')
+
+        if command == 'ping':
+            await self.send_json({'type': 'pong'})
+        else:
+            await self.send_json({
+                'type': 'error',
+                'message': f'Unknown command: {command}'
+            })
+
+    async def ticket_event(self, event):
+        """Receive ticket events from the channel layer."""
+        await self.send_json(event.get('payload', {}))
 
