@@ -57,11 +57,8 @@ class Command(BaseCommand):
             
             # Get branches
             branches = Branch.objects.filter(organization=organization, is_active=True)
-            if not branches.exists():
-                self.stdout.write(self.style.WARNING('No active branches found. Creating organization-wide KPIs only.'))
-                branch_list = [None]
-            else:
-                branch_list = list(branches) + [None]  # Include None for organization-wide KPIs
+            
+            branch_list = list(branches)  # Include None for organization-wide KPIs
             
             # Get supervisor user or create one
             supervisor_role = Role.objects.filter(
@@ -98,15 +95,15 @@ class Command(BaseCommand):
                     'aggregate_query': 'tickets.created.count()',
                 },
                 {
-                    'name': 'Tickets Resolved',
-                    'description': 'Number of tickets resolved per period',
+                    'name': 'Tickets Closed',
+                    'description': 'Number of tickets closed per period',
                     'source_type': 'aggregate',
                     'period': 'daily',
                     'target_value': Decimal('45.00'),
                     'minimum_value': Decimal('25.00'),
                     'maximum_value': Decimal('90.00'),
                     'unit': 'count',
-                    'aggregate_query': 'tickets.resolved.count()',
+                    'aggregate_query': 'tickets.closed.count()',
                 },
                 {
                     'name': 'Average Ticket Resolution Time',
@@ -153,26 +150,15 @@ class Command(BaseCommand):
                     'aggregate_query': 'messages.sent.count()',
                 },
                 {
-                    'name': 'Revenue',
-                    'description': 'Monthly revenue in USD',
+                    'name': 'Number of phone calls picked up',
+                    'description': 'Number of phone calls picked up by the agent',
                     'source_type': 'manual',
-                    'period': 'monthly',
-                    'target_value': Decimal('50000.00'),
-                    'minimum_value': Decimal('30000.00'),
-                    'maximum_value': Decimal('100000.00'),
-                    'unit': 'USD',
-                    'aggregate_query': '',
-                },
-                {
-                    'name': 'User Retention Rate',
-                    'description': 'Percentage of users retained month-over-month',
-                    'source_type': 'manual',
-                    'period': 'monthly',
-                    'target_value': Decimal('85.00'),
-                    'minimum_value': Decimal('70.00'),
-                    'maximum_value': Decimal('95.00'),
-                    'unit': 'percentage',
-                    'aggregate_query': '',
+                    'period': 'daily',
+                    'target_value': Decimal('10.00'),
+                    'minimum_value': Decimal('5.00'),
+                    'maximum_value': Decimal('15.00'),
+                    'unit': 'count',
+                    'aggregate_query': 'phone_calls.picked_up.count()',
                 },
             ]
             
@@ -439,7 +425,7 @@ class Command(BaseCommand):
         # Map KPI names to action types
         action_type_map = {
             'Tickets Created': 'ticket_created',
-            'Tickets Resolved': 'ticket_resolved',
+            'Tickets Closed': 'ticket_closed',
             'Messages Sent': 'message_sent',
             'Active Users': 'user_created',
         }

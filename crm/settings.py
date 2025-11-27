@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'rest_framework_simplejwt',
+    'django_celery_results',
     # Local apps
     'apps.accounts',
     'apps.crm',
@@ -184,3 +185,5 @@ AUTH_USER_MODEL = 'accounts.User'
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
