@@ -14,7 +14,8 @@ from .serializers import (
     NotificationSerializer,
     MessageSerializer,
     TicketAttachmentSerializer,
-    UserBasicSerializer
+    UserBasicSerializer,
+    TicketCloseSerializer
 )
 from .services import NotificationService
 
@@ -209,7 +210,7 @@ class TicketCloseView(APIView):
             # Notify all participants
             NotificationService.notify_ticket_closed(ticket)
             
-            serializer = TicketDetailSerializer(ticket)
+            serializer = TicketCloseSerializer(ticket)
             return Response({'data': serializer.data}, status=status.HTTP_200_OK)
         except Ticket.DoesNotExist:
             return Response(
@@ -242,7 +243,7 @@ class TicketResolveView(APIView):
             # Notify participants
             NotificationService.notify_ticket_status_changed(ticket, 'resolved')
             
-            serializer = TicketDetailSerializer(ticket)
+            serializer = TicketCloseSerializer(ticket)
             return Response({'data': serializer.data}, status=status.HTTP_200_OK)
         except Ticket.DoesNotExist:
             return Response(
