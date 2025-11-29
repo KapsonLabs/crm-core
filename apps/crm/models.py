@@ -1,11 +1,28 @@
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-import uuid
 from django.db.models import Max
 
 User = get_user_model()
 
+
+class TicketCategory(models.Model):
+    """
+    Ticket category model.
+    """
+    name = models.CharField(max_length=255)
+    description = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['name']),
+        ]
+
+    def __str__(self):
+        return self.name
 
 class Ticket(models.Model):
     """
@@ -41,6 +58,11 @@ class Ticket(models.Model):
     
     branch = models.ForeignKey(
         'organization.Branch',
+        on_delete=models.CASCADE,
+        related_name='tickets'
+    )
+    ticket_category = models.ForeignKey(
+        TicketCategory,
         on_delete=models.CASCADE,
         related_name='tickets'
     )

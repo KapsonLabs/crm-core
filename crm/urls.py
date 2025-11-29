@@ -25,6 +25,7 @@ urlpatterns = [
     path('api/crm/', include('apps.crm.urls')),
     path('api/organization/', include('apps.organization.urls')),
     path('api/kpis/', include('apps.kpis.urls')),
+    path('api/info/', include('apps.info.urls')),
 ]
 
 # Serve media files in development
