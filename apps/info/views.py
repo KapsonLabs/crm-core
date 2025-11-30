@@ -1,11 +1,8 @@
-from rest_framework import generics, status
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.shortcuts import get_object_or_404
-from django.db.models import Q
 
-from .models import Category, Tag, FAQ, SOP, PolicyExplanation, TrainingArticle
 from .serializers import (
     CategorySerializer,
     TagSerializer,
@@ -14,116 +11,153 @@ from .serializers import (
     PolicyExplanationSerializer,
     TrainingArticleSerializer,
 )
+from .services import (
+    CategoryService,
+    TagService,
+    FAQService,
+    SOPService,
+    PolicyExplanationService,
+    TrainingArticleService,
+)
 
 
 # -----------------------------------------------------------------------------
 # Category Views
 # -----------------------------------------------------------------------------
 
-class CategoryListCreateView(generics.ListCreateAPIView):
+class CategoryListCreateView(APIView):
     """List all categories or create a new category."""
     permission_classes = [IsAuthenticated]
-    serializer_class = CategorySerializer
-    queryset = Category.objects.all().order_by('name')
 
-    def get_queryset(self):
-        queryset = Category.objects.all().order_by('name')
-        is_active = self.request.query_params.get('is_active')
-        if is_active is not None:
-            queryset = queryset.filter(is_active=is_active.lower() == 'true')
-        return queryset
+    def get(self, request):
+        """List all categories."""
+        params = request.query_params.dict()
+        queryset = CategoryService.get_category_list_queryset(params)
+        serializer = CategorySerializer(queryset, many=True)
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Create a new category."""
+        serializer = CategorySerializer(data=request.data)
+        if serializer.is_valid():
+            category = CategoryService.create_category(serializer.validated_data)
+            serializer = CategorySerializer(category)
+            return Response({"data": serializer.data, "status": 201}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class CategoryDetailView(generics.RetrieveUpdateAPIView):
+class CategoryDetailView(APIView):
     """Retrieve or update a category."""
     permission_classes = [IsAuthenticated]
-    serializer_class = CategorySerializer
-    queryset = Category.objects.all()
-    lookup_field = 'id'
+
+    def get(self, request, id):
+        """Retrieve a category."""
+        category = CategoryService.get_category_by_id(id)
+        serializer = CategorySerializer(category)
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+
+    def put(self, request, id):
+        """Update a category."""
+        category = CategoryService.get_category_by_id(id)
+        serializer = CategorySerializer(category, data=request.data)
+        if serializer.is_valid():
+            category = CategoryService.update_category(category, serializer.validated_data)
+            serializer = CategorySerializer(category)
+            return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # -----------------------------------------------------------------------------
 # Tag Views
 # -----------------------------------------------------------------------------
 
-class TagListCreateView(generics.ListCreateAPIView):
+class TagListCreateView(APIView):
     """List all tags or create a new tag."""
     permission_classes = [IsAuthenticated]
-    serializer_class = TagSerializer
-    queryset = Tag.objects.all().order_by('name')
 
-    def get_queryset(self):
-        queryset = Tag.objects.all().order_by('name')
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(name__icontains=search)
-        return queryset
+    def get(self, request):
+        """List all tags."""
+        params = request.query_params.dict()
+        queryset = TagService.get_tag_list_queryset(params)
+        serializer = TagSerializer(queryset, many=True)
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Create a new tag."""
+        serializer = TagSerializer(data=request.data)
+        if serializer.is_valid():
+            tag = TagService.create_tag(serializer.validated_data)
+            serializer = TagSerializer(tag)
+            return Response({"data": serializer.data, "status": 201}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class TagDetailView(generics.RetrieveUpdateAPIView):
+class TagDetailView(APIView):
     """Retrieve or update a tag."""
     permission_classes = [IsAuthenticated]
-    serializer_class = TagSerializer
-    queryset = Tag.objects.all()
-    lookup_field = 'id'
+
+    def get(self, request, id):
+        """Retrieve a tag."""
+        tag = TagService.get_tag_by_id(id)
+        serializer = TagSerializer(tag)
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+
+    def put(self, request, id):
+        """Update a tag."""
+        tag = TagService.get_tag_by_id(id)
+        serializer = TagSerializer(tag, data=request.data)
+        if serializer.is_valid():
+            tag = TagService.update_tag(tag, serializer.validated_data)
+            serializer = TagSerializer(tag)
+            return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # -----------------------------------------------------------------------------
 # FAQ Views
 # -----------------------------------------------------------------------------
 
-class FAQListCreateView(generics.ListCreateAPIView):
+class FAQListCreateView(APIView):
     """List all FAQs or create a new FAQ."""
     permission_classes = [IsAuthenticated]
-    serializer_class = FAQSerializer
 
-    def get_queryset(self):
-        queryset = FAQ.objects.select_related('category', 'created_by', 'updated_by').prefetch_related('tags').all()
-        
-        # Filter by published status
-        is_published = self.request.query_params.get('is_published')
-        if is_published is not None:
-            queryset = queryset.filter(is_published=is_published.lower() == 'true')
-        
-        # Filter by category
-        category_id = self.request.query_params.get('category_id')
-        if category_id:
-            queryset = queryset.filter(category_id=category_id)
-        
-        # Search
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(question__icontains=search) | Q(answer__icontains=search)
-            )
-        
-        return queryset.order_by('-created_at')
+    def get(self, request):
+        """List all FAQs."""
+        params = request.query_params.dict()
+        queryset = FAQService.get_faq_list_queryset(params)
+        serializer = FAQSerializer(queryset, many=True, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def post(self, request):
+        """Create a new FAQ."""
+        serializer = FAQSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            faq = FAQService.create_faq(serializer.validated_data, request.user)
+            serializer = FAQSerializer(faq, context={'request': request})
+            return Response({"data": serializer.data, "status": 201}, status=status.HTTP_201_CREATED)
+        return Response({"data": serializer.errors, "status": 400}, status=status.HTTP_400_BAD_REQUEST)
 
 
-class FAQDetailView(generics.RetrieveUpdateAPIView):
+class FAQDetailView(APIView):
     """Retrieve or update a FAQ."""
     permission_classes = [IsAuthenticated]
-    serializer_class = FAQSerializer
-    queryset = FAQ.objects.select_related('category', 'created_by', 'updated_by').prefetch_related('tags').all()
-    lookup_field = 'id'
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def get(self, request, id):
+        """Retrieve a FAQ and increment view count."""
+        faq = FAQService.get_faq_by_id(id)
+        FAQService.increment_view_count(faq)
+        serializer = FAQSerializer(faq, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def retrieve(self, request, *args, **kwargs):
-        """Increment view count when FAQ is viewed."""
-        instance = self.get_object()
-        instance.view_count += 1
-        instance.save(update_fields=['view_count'])
-        serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+    def put(self, request, id):
+        """Update a FAQ."""
+        faq = FAQService.get_faq_by_id(id)
+        serializer = FAQSerializer(faq, data=request.data, context={'request': request})
+        if serializer.is_valid():
+            faq = FAQService.update_faq(faq, serializer.validated_data, request.user)
+            serializer = FAQSerializer(faq, context={'request': request})
+            return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class FAQHelpfulView(APIView):
@@ -131,82 +165,58 @@ class FAQHelpfulView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
-        faq = get_object_or_404(FAQ, id=id)
+        """Mark a FAQ as helpful or not helpful."""
+        faq = FAQService.get_faq_by_id(id)
         is_helpful = request.data.get('is_helpful', True)
-        
-        if is_helpful:
-            faq.helpful_count += 1
-        else:
-            faq.not_helpful_count += 1
-        
-        faq.save(update_fields=['helpful_count', 'not_helpful_count'])
-        return Response({
-            'helpful_count': faq.helpful_count,
-            'not_helpful_count': faq.not_helpful_count
-        })
+        result = FAQService.mark_helpful(faq, is_helpful)
+        return Response({"data": result, "status": 200}, status=status.HTTP_200_OK)
 
 
 # -----------------------------------------------------------------------------
 # SOP Views
 # -----------------------------------------------------------------------------
 
-class SOPListCreateView(generics.ListCreateAPIView):
+class SOPListCreateView(APIView):
     """List all SOPs or create a new SOP."""
     permission_classes = [IsAuthenticated]
-    serializer_class = SOPSerializer
 
-    def get_queryset(self):
-        queryset = SOP.objects.select_related('category', 'created_by', 'updated_by', 'approved_by').prefetch_related('tags').all()
-        
-        # Filter by published status
-        is_published = self.request.query_params.get('is_published')
-        if is_published is not None:
-            queryset = queryset.filter(is_published=is_published.lower() == 'true')
-        
-        # Filter by status
-        status_filter = self.request.query_params.get('status')
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        
-        # Filter by category
-        category_id = self.request.query_params.get('category_id')
-        if category_id:
-            queryset = queryset.filter(category_id=category_id)
-        
-        # Search
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(content__icontains=search)
-            )
-        
-        return queryset.order_by('-created_at')
+    def get(self, request):
+        """List all SOPs."""
+        params = request.query_params.dict()
+        queryset = SOPService.get_sop_list_queryset(params)
+        serializer = SOPSerializer(queryset, many=True, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def post(self, request):
+        """Create a new SOP."""
+        serializer = SOPSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            sop = SOPService.create_sop(serializer.validated_data, request.user)
+            serializer = SOPSerializer(sop, context={'request': request})
+            return Response({"data": serializer.data, "status": 201}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class SOPDetailView(generics.RetrieveUpdateAPIView):
+class SOPDetailView(APIView):
     """Retrieve or update a SOP."""
     permission_classes = [IsAuthenticated]
-    serializer_class = SOPSerializer
-    queryset = SOP.objects.select_related('category', 'created_by', 'updated_by', 'approved_by').prefetch_related('tags').all()
-    lookup_field = 'id'
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def get(self, request, id):
+        """Retrieve a SOP and increment view count."""
+        sop = SOPService.get_sop_by_id(id)
+        SOPService.increment_view_count(sop)
+        serializer = SOPSerializer(sop, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def retrieve(self, request, *args, **kwargs):
-        """Increment view count when SOP is viewed."""
-        instance = self.get_object()
-        instance.view_count += 1
-        instance.save(update_fields=['view_count'])
-        serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+    def put(self, request, id):
+        """Update a SOP."""
+        sop = SOPService.get_sop_by_id(id)
+        serializer = SOPSerializer(sop, data=request.data, context={'request': request})
+        if serializer.is_valid():
+            sop = SOPService.update_sop(sop, serializer.validated_data, request.user)
+            serializer = SOPSerializer(sop, context={'request': request})
+            return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class SOPApproveView(APIView):
@@ -214,132 +224,103 @@ class SOPApproveView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id):
-        sop = get_object_or_404(SOP, id=id)
-        sop.status = 'approved'
-        sop.approved_by = request.user
-        sop.save(update_fields=['status', 'approved_by', 'approved_at'])
-        
+        """Approve a SOP."""
+        sop = SOPService.get_sop_by_id(id)
+        sop = SOPService.approve_sop(sop, request.user)
         serializer = SOPSerializer(sop, context={'request': request})
-        return Response(serializer.data)
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
 
 # -----------------------------------------------------------------------------
 # Policy Explanation Views
 # -----------------------------------------------------------------------------
 
-class PolicyExplanationListCreateView(generics.ListCreateAPIView):
+class PolicyExplanationListCreateView(APIView):
     """List all policy explanations or create a new one."""
     permission_classes = [IsAuthenticated]
-    serializer_class = PolicyExplanationSerializer
 
-    def get_queryset(self):
-        queryset = PolicyExplanation.objects.select_related('category', 'created_by', 'updated_by').prefetch_related('tags').all()
-        
-        # Filter by published status
-        is_published = self.request.query_params.get('is_published')
-        if is_published is not None:
-            queryset = queryset.filter(is_published=is_published.lower() == 'true')
-        
-        # Filter by category
-        category_id = self.request.query_params.get('category_id')
-        if category_id:
-            queryset = queryset.filter(category_id=category_id)
-        
-        # Search
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(content__icontains=search) | Q(policy_reference__icontains=search)
-            )
-        
-        return queryset.order_by('-created_at')
+    def get(self, request):
+        """List all policy explanations."""
+        params = request.query_params.dict()
+        queryset = PolicyExplanationService.get_policy_explanation_list_queryset(params)
+        serializer = PolicyExplanationSerializer(queryset, many=True, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def post(self, request):
+        """Create a new policy explanation."""
+        serializer = PolicyExplanationSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            policy = PolicyExplanationService.create_policy_explanation(serializer.validated_data, request.user)
+            serializer = PolicyExplanationSerializer(policy, context={'request': request})
+            return Response({"data": serializer.data, "status": 201}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class PolicyExplanationDetailView(generics.RetrieveUpdateAPIView):
+class PolicyExplanationDetailView(APIView):
     """Retrieve or update a policy explanation."""
     permission_classes = [IsAuthenticated]
-    serializer_class = PolicyExplanationSerializer
-    queryset = PolicyExplanation.objects.select_related('category', 'created_by', 'updated_by').prefetch_related('tags').all()
-    lookup_field = 'id'
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def get(self, request, id):
+        """Retrieve a policy explanation and increment view count."""
+        policy = PolicyExplanationService.get_policy_explanation_by_id(id)
+        PolicyExplanationService.increment_view_count(policy)
+        serializer = PolicyExplanationSerializer(policy, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def retrieve(self, request, *args, **kwargs):
-        """Increment view count when policy explanation is viewed."""
-        instance = self.get_object()
-        instance.view_count += 1
-        instance.save(update_fields=['view_count'])
-        serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+    def put(self, request, id):
+        """Update a policy explanation."""
+        policy = PolicyExplanationService.get_policy_explanation_by_id(id)
+        serializer = PolicyExplanationSerializer(policy, data=request.data, context={'request': request})
+        if serializer.is_valid():
+            policy = PolicyExplanationService.update_policy_explanation(policy, serializer.validated_data, request.user)
+            serializer = PolicyExplanationSerializer(policy, context={'request': request})
+            return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # -----------------------------------------------------------------------------
 # Training Article Views
 # -----------------------------------------------------------------------------
 
-class TrainingArticleListCreateView(generics.ListCreateAPIView):
+class TrainingArticleListCreateView(APIView):
     """List all training articles or create a new one."""
     permission_classes = [IsAuthenticated]
-    serializer_class = TrainingArticleSerializer
 
-    def get_queryset(self):
-        queryset = TrainingArticle.objects.select_related('category', 'created_by', 'updated_by').prefetch_related('tags').all()
-        
-        # Filter by published status
-        is_published = self.request.query_params.get('is_published')
-        if is_published is not None:
-            queryset = queryset.filter(is_published=is_published.lower() == 'true')
-        
-        # Filter by category
-        category_id = self.request.query_params.get('category_id')
-        if category_id:
-            queryset = queryset.filter(category_id=category_id)
-        
-        # Filter by difficulty level
-        difficulty_level = self.request.query_params.get('difficulty_level')
-        if difficulty_level:
-            queryset = queryset.filter(difficulty_level=difficulty_level)
-        
-        # Search
-        search = self.request.query_params.get('search')
-        if search:
-            queryset = queryset.filter(
-                Q(title__icontains=search) | Q(content__icontains=search) | Q(summary__icontains=search)
-            )
-        
-        return queryset.order_by('-created_at')
+    def get(self, request):
+        """List all training articles."""
+        params = request.query_params.dict()
+        queryset = TrainingArticleService.get_training_article_list_queryset(params)
+        serializer = TrainingArticleSerializer(queryset, many=True, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def post(self, request):
+        """Create a new training article."""
+        serializer = TrainingArticleSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            article = TrainingArticleService.create_training_article(serializer.validated_data, request.user)
+            serializer = TrainingArticleSerializer(article, context={'request': request})
+            return Response({"data": serializer.data, "status": 201}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class TrainingArticleDetailView(generics.RetrieveUpdateAPIView):
+class TrainingArticleDetailView(APIView):
     """Retrieve or update a training article."""
     permission_classes = [IsAuthenticated]
-    serializer_class = TrainingArticleSerializer
-    queryset = TrainingArticle.objects.select_related('category', 'created_by', 'updated_by').prefetch_related('tags').all()
-    lookup_field = 'id'
 
-    def get_serializer_context(self):
-        context = super().get_serializer_context()
-        context['request'] = self.request
-        return context
+    def get(self, request, id):
+        """Retrieve a training article and increment view count."""
+        article = TrainingArticleService.get_training_article_by_id(id)
+        TrainingArticleService.increment_view_count(article)
+        serializer = TrainingArticleSerializer(article, context={'request': request})
+        return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
 
-    def retrieve(self, request, *args, **kwargs):
-        """Increment view count when training article is viewed."""
-        instance = self.get_object()
-        instance.view_count += 1
-        instance.save(update_fields=['view_count'])
-        serializer = self.get_serializer(instance)
-        return Response(serializer.data)
+    def put(self, request, id):
+        """Update a training article."""
+        article = TrainingArticleService.get_training_article_by_id(id)
+        serializer = TrainingArticleSerializer(article, data=request.data, context={'request': request})
+        if serializer.is_valid():
+            article = TrainingArticleService.update_training_article(article, serializer.validated_data, request.user)
+            serializer = TrainingArticleSerializer(article, context={'request': request})
+            return Response({"data": serializer.data, "status": 200}, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

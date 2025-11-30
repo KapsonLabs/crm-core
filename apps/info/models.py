@@ -250,6 +250,12 @@ class TrainingArticle(models.Model):
     """
     Training Article model for educational content.
     """
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('review', 'Review'),
+        ('published', 'Published'),
+        ('archived', 'Archived'),
+    ]
     DIFFICULTY_CHOICES = [
         ('beginner', 'Beginner'),
         ('intermediate', 'Intermediate'),
@@ -260,6 +266,7 @@ class TrainingArticle(models.Model):
     title = models.CharField(max_length=500)
     content = models.TextField()
     summary = models.TextField(blank=True, help_text="Brief summary of the article")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
     category = models.ForeignKey(
         Category,
         on_delete=models.SET_NULL,
@@ -278,6 +285,10 @@ class TrainingArticle(models.Model):
         help_text="Estimated reading time in minutes"
     )
     is_published = models.BooleanField(default=False)
+    is_compulsory = models.BooleanField(
+        default=False,
+        help_text="Whether this training article is compulsory for users to read"
+    )
     view_count = models.PositiveIntegerField(default=0)
     created_by = models.ForeignKey(
         User,
@@ -313,4 +324,43 @@ class TrainingArticle(models.Model):
         if self.is_published and not self.published_at:
             self.published_at = timezone.now()
         super().save(*args, **kwargs)
+
+
+class TrainingArticleRead(models.Model):
+    """
+    Model to track which users have read which training articles.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='training_article_reads',
+        help_text="User who read the training article"
+    )
+    training_article = models.ForeignKey(
+        TrainingArticle,
+        on_delete=models.CASCADE,
+        related_name='reads',
+        help_text="Training article that was read"
+    )
+    read_at = models.DateTimeField(auto_now_add=True, help_text="When the user read the article")
+    completed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the user completed reading the article (if tracked)"
+    )
+    
+    class Meta:
+        verbose_name = "Training Article Read"
+        verbose_name_plural = "Training Article Reads"
+        unique_together = [['user', 'training_article']]
+        indexes = [
+            models.Index(fields=['user', 'training_article']),
+            models.Index(fields=['read_at']),
+            models.Index(fields=['user', 'read_at']),
+        ]
+        ordering = ['-read_at']
+    
+    def __str__(self):
+        return f"{self.user.email} read {self.training_article.title}"
 

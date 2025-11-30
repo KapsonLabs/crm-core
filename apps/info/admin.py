@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Tag, FAQ, SOP, PolicyExplanation, TrainingArticle
+from .models import Category, Tag, FAQ, SOP, PolicyExplanation, TrainingArticle, TrainingArticleRead
 
 
 @admin.register(Category)
@@ -90,8 +90,8 @@ class PolicyExplanationAdmin(admin.ModelAdmin):
 
 @admin.register(TrainingArticle)
 class TrainingArticleAdmin(admin.ModelAdmin):
-    list_display = ['title', 'category', 'difficulty_level', 'estimated_read_time', 'is_published', 'view_count', 'created_at']
-    list_filter = ['is_published', 'category', 'difficulty_level', 'created_at']
+    list_display = ['title', 'category', 'difficulty_level', 'estimated_read_time', 'is_published', 'is_compulsory', 'view_count', 'created_at']
+    list_filter = ['is_published', 'is_compulsory', 'category', 'difficulty_level', 'created_at']
     search_fields = ['title', 'content', 'summary']
     filter_horizontal = ['tags']
     readonly_fields = ['id', 'view_count', 'created_at', 'updated_at', 'published_at']
@@ -100,7 +100,7 @@ class TrainingArticleAdmin(admin.ModelAdmin):
             'fields': ('title', 'summary', 'content', 'category', 'tags')
         }),
         ('Training Details', {
-            'fields': ('difficulty_level', 'estimated_read_time')
+            'fields': ('difficulty_level', 'estimated_read_time', 'is_compulsory')
         }),
         ('Status', {
             'fields': ('is_published', 'published_at')
@@ -112,4 +112,13 @@ class TrainingArticleAdmin(admin.ModelAdmin):
             'fields': ('id', 'created_by', 'updated_by', 'created_at', 'updated_at')
         }),
     )
+
+
+@admin.register(TrainingArticleRead)
+class TrainingArticleReadAdmin(admin.ModelAdmin):
+    list_display = ['user', 'training_article', 'read_at', 'completed_at']
+    list_filter = ['read_at', 'completed_at']
+    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'training_article__title']
+    readonly_fields = ['id', 'read_at', 'completed_at']
+    date_hierarchy = 'read_at'
 

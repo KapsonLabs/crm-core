@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Category, Tag, FAQ, SOP, PolicyExplanation, TrainingArticle
+from .models import Category, Tag, FAQ, SOP, PolicyExplanation, TrainingArticle, TrainingArticleRead
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -244,7 +244,7 @@ class TrainingArticleSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'summary', 'content', 'category', 'category_id', 'tags', 'tag_ids',
             'difficulty_level', 'difficulty_level_display', 'estimated_read_time',
-            'is_published', 'view_count', 'created_by', 'created_by_email',
+            'is_published', 'is_compulsory', 'view_count', 'created_by', 'created_by_email',
             'updated_by', 'updated_by_email', 'created_at', 'updated_at', 'published_at'
         ]
         read_only_fields = [
@@ -290,4 +290,19 @@ class TrainingArticleSerializer(serializers.ModelSerializer):
             instance.tags.set(tag_ids)
         
         return instance
+
+
+class TrainingArticleReadSerializer(serializers.ModelSerializer):
+    """Serializer for TrainingArticleRead model."""
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_full_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    training_article_title = serializers.CharField(source='training_article.title', read_only=True)
+    
+    class Meta:
+        model = TrainingArticleRead
+        fields = [
+            'id', 'user', 'user_email', 'user_full_name', 'training_article',
+            'training_article_title', 'read_at', 'completed_at'
+        ]
+        read_only_fields = ['id', 'read_at', 'completed_at']
 
