@@ -88,6 +88,15 @@ class KPI(models.Model):
         blank=True,
         help_text="Unit of measurement (e.g., 'count', 'percentage', 'USD', 'hours')"
     )
+
+    weight = models.DecimalField(max_digits=5, decimal_places=2, default=100.0)
+    
+    scoring_config = models.JSONField(default=dict)
+    
+    formula = models.TextField(blank=True, help_text="Optional expression/DSL for composite or computed KPIs")
+    
+    dependencies = models.ManyToManyField('self', symmetrical=False, blank=True, related_name='dependents')
+    is_composite = models.BooleanField(default=False)
     
     # Aggregate configuration (if source_type is 'aggregate')
     aggregate_query = models.TextField(
