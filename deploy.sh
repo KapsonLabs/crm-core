@@ -243,6 +243,59 @@ EOF
     print_message "✓ Service file created successfully"
 }
 
+# Step 10: Create celery service file
+create_celery_service_file() {
+    print_step "Step 10: Creating Celery Service File"
+    
+    SERVICE_FILE="/etc/systemd/system/crm.celery.service"
+    
+    if [ -f "$SERVICE_FILE" ]; then
+        print_warning "Celery service file already exists"
+        read -p "Do you want to overwrite it? (y/N): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_message "Keeping existing celery service file"
+            return 0
+        fi
+    fi
+    
+    print_message "Creating celery service file at $SERVICE_FILE..."
+
+    cat > "$SERVICE_FILE" << EOF
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory= $PROJECT_ROOT
+ExecStart= $VENV_PATH/bin/celery -A crm flower -l info --address=127.0.0.1 --port=5555 --basic_auth=Allan:hall65536
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    
+    print_message "✓ Celery service file created successfully"
+}
+
+# Step 11: Enable celery service
+enable_celery_service() {
+    print_step "Step 11: Enabling Celery Service"
+    
+    SERVICE_FILE="/etc/systemd/system/crm.celery.service"
+    
+    if [ -f "$SERVICE_FILE" ]; then
+        print_message "Enabling celery service..."
+        systemctl enable crm.celery.service
+        systemctl start crm.celery.service
+        print_message "✓ Celery service enabled"
+    else
+        print_error "Celery service file not found"
+        exit 1
+    fi
+}
+
 # Step 10 & 11: Start and enable socket
 # start_enable_socket() {
 #     print_step "Steps 10 & 11: Starting and Enabling Systemd Socket"
@@ -438,6 +491,8 @@ main() {
     create_superuser
     collect_static
     create_service_file
+    create_celery_service_file
+    enable_celery_service
     configure_nginx
     enable_nginx_site
     restart_nginx
@@ -446,4 +501,3 @@ main() {
 
 # Run main function
 main
-

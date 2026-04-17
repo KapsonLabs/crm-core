@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import include, path
 from .views import (
     KPIListCreateView,
     KPIDetailView,
@@ -21,6 +21,8 @@ from .views import (
 app_name = 'kpis'
 
 urlpatterns = [
+    path("engine/", include("apps.kpis.api.urls")),
+
     # User KPI endpoints
     path('my-kpis/', UserKPIsView.as_view(), name='user-kpis'),
     
@@ -49,4 +51,3 @@ urlpatterns = [
     path('kpi-reports/<uuid:pk>/approve/', KPIReportApproveView.as_view(), name='kpi-report-approve'),
     path('kpi-reports/approvals/', KPIApprovalsView.as_view(), name='kpi-report-pending-approvals'),
 ]
-

@@ -18,6 +18,9 @@ from apps.kpis.models import KPI
 
 logger = logging.getLogger(__name__)
 
+# Import phase-1 engine task so Celery autodiscovery registers it.
+from apps.kpis.execution.tasks import run_kpi_version  # noqa: F401,E402
+
 
 @shared_task(bind=True, max_retries=3)
 def aggregate_kpi_reports_task(self, reference_date=None, aggregation_method='average'):
@@ -241,4 +244,3 @@ def trigger_kpi_aggregation_after_approval(kpi_id, period_start, period_end, agg
             'success': False,
             'error': str(exc)
         }
-

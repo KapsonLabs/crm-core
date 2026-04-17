@@ -21,6 +21,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('', include('django_prometheus.urls')),
     path('api/accounts/', include('apps.accounts.urls')),
     path('api/crm/', include('apps.crm.urls')),
     path('api/organization/', include('apps.organization.urls')),

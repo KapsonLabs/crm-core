@@ -72,13 +72,10 @@ class Command(BaseCommand):
             
             tags_data = [
                 {'slug': 'routes', 'name': 'routes'},
-                {'slug': 'fares', 'name': 'fares'},
-                {'slug': 'lost-and-found', 'name': 'lost-and-found'},
                 {'slug': 'complaints', 'name': 'complaints'},
                 {'slug': 'safety', 'name': 'safety'},
                 {'slug': 'accessibility', 'name': 'accessibility'},
                 {'slug': 'training', 'name': 'training'},
-                {'slug': 'drivers', 'name': 'drivers'},
             ]
             
             for tag_data in tags_data:
@@ -109,14 +106,14 @@ class Command(BaseCommand):
                     'question': 'What discounts are available for students, seniors and persons with disabilities?',
                     'answer': 'The ministry offers concession fares for full-time students, registered seniors above the age threshold, and passengers with certified disabilities. To access these discounts, commuters must apply for a personalised smart card via the online portal or any designated service centre, and present the card when boarding or tapping in. The current concession rates and eligibility criteria are published on the ministry website and updated annually.',
                     'category_slug': 'ticketing-fares',
-                    'tag_slugs': ['fares', 'accessibility'],
+                    'tag_slugs': ['routes', 'accessibility'],
                     'is_published': True,
                 },
                 {
                     'question': 'How do I retrieve an item I left on a ministry bus?',
                     'answer': 'If you lose an item on a bus, report it within 24 hours through the mobile app or contact centre. Share the route number, direction, approximate time of travel, boarding and alighting stops, and a clear description of the item. Lost property is stored at the depot for a limited period; high-value items are logged and may require proof of ownership before collection.',
                     'category_slug': 'customer-service-complaints',
-                    'tag_slugs': ['lost-and-found', 'routes'],
+                    'tag_slugs': ['routes'],
                     'is_published': True,
                 },
                 {
@@ -311,7 +308,7 @@ class Command(BaseCommand):
                     'category_slug': 'route-operations',
                     'tag_slugs': ['training'],
                     'difficulty_level': 'beginner',
-                    'estimated_read_time': 10,
+                    'estimated_read_time': 8,
                     'is_published': True,
                 },
                 {
@@ -319,9 +316,9 @@ class Command(BaseCommand):
                     'content': 'This article covers the basics of customer service in a public transport context: greeting passengers, giving clear announcements, handling inquiries and managing difficult interactions calmly. It includes practical scenarios such as overcrowded buses, timetable disruptions and complaints about fares. Staff are encouraged to use the LEARN model (Listen, Empathise, Apologise, Resolve, Notify) when handling complaints and to record serious incidents in the CRM.',
                     'summary': 'Foundational customer service skills tailored for front-line transport staff.',
                     'category_slug': 'customer-service-complaints',
-                    'tag_slugs': ['complaints', 'training'],
+                    'tag_slugs': ['training'],
                     'difficulty_level': 'beginner',
-                    'estimated_read_time': 12,
+                    'estimated_read_time': 10,
                     'is_published': True,
                 },
                 {
@@ -331,7 +328,7 @@ class Command(BaseCommand):
                     'category_slug': 'safety-compliance',
                     'tag_slugs': ['safety', 'drivers'],
                     'difficulty_level': 'intermediate',
-                    'estimated_read_time': 15,
+                    'estimated_read_time': 9,
                     'is_published': True,
                 },
                 {
@@ -339,9 +336,9 @@ class Command(BaseCommand):
                     'content': 'This article helps staff understand different types of disabilities and how they may affect a passenger\'s journey. It provides guidance on operating ramps, communicating with visually or hearing-impaired passengers and making reasonable accommodations. Emphasis is placed on dignity, patience and clear communication, as well as on the ministry\'s legal obligations under accessibility legislation.',
                     'summary': 'Practical guidance for safely and respectfully serving passengers with disabilities.',
                     'category_slug': 'safety-compliance',
-                    'tag_slugs': ['accessibility', 'training'],
+                    'tag_slugs': ['training'],
                     'difficulty_level': 'intermediate',
-                    'estimated_read_time': 14,
+                    'estimated_read_time': 10,
                     'is_published': True,
                 },
                 {
@@ -351,7 +348,7 @@ class Command(BaseCommand):
                     'category_slug': 'digital-channels-e-ticketing',
                     'tag_slugs': ['training'],
                     'difficulty_level': 'intermediate',
-                    'estimated_read_time': 12,
+                    'estimated_read_time': 8,
                     'is_published': True,
                 },
                 {
@@ -361,7 +358,7 @@ class Command(BaseCommand):
                     'category_slug': 'fleet-maintenance',
                     'tag_slugs': ['safety', 'training'],
                     'difficulty_level': 'beginner',
-                    'estimated_read_time': 11,
+                    'estimated_read_time': 7,
                     'is_published': True,
                 },
                 {
@@ -371,7 +368,7 @@ class Command(BaseCommand):
                     'category_slug': 'route-operations',
                     'tag_slugs': ['routes', 'training'],
                     'difficulty_level': 'advanced',
-                    'estimated_read_time': 18,
+                    'estimated_read_time': 8,
                     'is_published': True,
                 },
                 {
@@ -381,7 +378,7 @@ class Command(BaseCommand):
                     'category_slug': 'route-operations',
                     'tag_slugs': ['routes', 'safety', 'training'],
                     'difficulty_level': 'advanced',
-                    'estimated_read_time': 20,
+                    'estimated_read_time': 10,
                     'is_published': True,
                 },
             ]
