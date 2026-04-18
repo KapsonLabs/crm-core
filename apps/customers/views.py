@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Customer, CustomerFeedback
-from apps.organization.models import Organization
+from apps.organization.models import Branch
 
 from .serializers import (
     CustomerSerializer,
@@ -43,6 +43,9 @@ class CustomerListCreateView(APIView):
         if request.query_params.get('is_active') is not None:
             active = request.query_params.get('is_active').lower() == 'true'
             qs = qs.filter(is_active=active)
+        bid = request.query_params.get('branch_id')
+        if bid:
+            qs = qs.filter(branch_id=bid)
         return Response(
             {'status': 200, 'data': CustomerSerializer(qs, many=True).data},
             status=status.HTTP_200_OK,
@@ -56,8 +59,8 @@ class CustomerListCreateView(APIView):
             customer = create_customer(request.user, ser.validated_data)
         except ValueError as e:
             return _bad_request(str(e))
-        except Organization.DoesNotExist:
-            return _bad_request('Invalid organization.')
+        except Branch.DoesNotExist:
+            return _bad_request('Invalid branch.')
         return Response(
             {'status': 201, 'data': CustomerSerializer(customer).data},
             status=status.HTTP_201_CREATED,
@@ -72,23 +75,6 @@ class CustomerDetailView(APIView):
 
     def get(self, request, pk):
         customer = self.get_object(request, pk)
-        return Response(
-            {'status': 200, 'data': CustomerSerializer(customer).data},
-            status=status.HTTP_200_OK,
-        )
-
-    def put(self, request, pk):
-        customer = self.get_object(request, pk)
-        ser = CustomerCreateWriteSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            update_customer(customer, request.user, ser.validated_data, partial=False)
-        except ValueError as e:
-            return _bad_request(str(e))
-        except PermissionError as e:
-            return _forbidden(str(e))
-        customer.refresh_from_db()
         return Response(
             {'status': 200, 'data': CustomerSerializer(customer).data},
             status=status.HTTP_200_OK,

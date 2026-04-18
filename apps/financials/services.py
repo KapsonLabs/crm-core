@@ -1,23 +1,30 @@
 from decimal import Decimal
+from datetime import date
 
-from django.db.models import Max, Sum
+from django.db.models import Max, Q, Sum
 from django.utils import timezone
 
-from apps.jobs.services import is_job_manager, job_queryset_for_user
+from apps.jobs.services import job_queryset_for_user
+from apps.organization.services import resolve_branch_for_user
 
 from .models import Invoice, InvoicePayment, Requisition
 
 
 def invoices_for_user(user):
     qs = Invoice.objects.select_related(
-        'job', 'job__customer', 'organization', 'created_by',
+        'job', 'job__customer', 'job__branch', 'organization', 'branch', 'created_by',
     ).prefetch_related('payments')
-    if is_job_manager(user):
+    if user.is_job_manager:
         if user.organization_id:
             return qs.filter(organization_id=user.organization_id)
         return qs
     job_ids = job_queryset_for_user(user).values_list('id', flat=True)
-    return qs.filter(job_id__in=job_ids)
+    qs = qs.filter(job_id__in=job_ids)
+    if user.branch_id:
+        qs = qs.filter(
+            Q(branch_id=user.branch_id) | Q(job__branch_id=user.branch_id),
+        )
+    return qs
 
 
 def invoice_balance_due(invoice):
@@ -44,15 +51,28 @@ def _next_invoice_number(organization_id):
 
 
 def create_invoice(user, data):
-    from datetime import date
 
     job_id = data['job_id']
-    job = job_queryset_for_user(user).select_related('organization').get(pk=job_id)
+    job = job_queryset_for_user(user).select_related('organization', 'branch').get(pk=job_id)
+
+    branch_id = data.get('branch_id')
+    if branch_id is not None:
+        branch, organization = resolve_branch_for_user(user, branch_id)
+        if job.organization_id != organization.id:
+            raise ValueError('Job organization does not match the branch.')
+        if job.branch_id and str(job.branch_id) != str(branch_id):
+            raise ValueError('branch_id does not match the job branch.')
+    else:
+        branch = None
+        organization = job.organization
+        if job.branch_id:
+            raise ValueError('branch_id is required for invoices attached to this job.')
+
     subtotal = Decimal(str(data.get('subtotal', '0.00')))
     tax_amount = Decimal(str(data.get('tax_amount', '0.00')))
     total = Decimal(str(data.get('total', subtotal + tax_amount)))
     currency = data.get('currency', 'USD')
-    status = data.get('status', Invoice.STATUS_DRAFT)
+    status = data.get('status', Invoice.STATUS_SENT)
     notes = data.get('notes', '')
     issued_at = data.get('issued_at')
     if issued_at is None:
@@ -61,9 +81,10 @@ def create_invoice(user, data):
 
     return Invoice.objects.create(
         job=job,
-        organization=job.organization,
+        organization=organization,
+        branch=branch,
         created_by=user,
-        invoice_number=_next_invoice_number(job.organization_id),
+        invoice_number=_next_invoice_number(organization.id),
         status=status,
         currency=currency,
         subtotal=subtotal,
@@ -76,7 +97,7 @@ def create_invoice(user, data):
 
 
 def update_invoice(instance, user, data, partial=False):
-    if not is_job_manager(user):
+    if not user.is_job_manager:
         raise PermissionError('Only administrators or supervisors can update invoices.')
     if instance.status == Invoice.STATUS_VOID:
         raise ValueError('Cannot edit a void invoice.')
@@ -96,7 +117,7 @@ def update_invoice(instance, user, data, partial=False):
 
 
 def void_invoice(instance, user):
-    if not is_job_manager(user):
+    if not user.is_job_manager:
         raise PermissionError('Only administrators or supervisors can void invoices.')
     instance.status = Invoice.STATUS_VOID
     instance.save(update_fields=['status', 'updated_at'])
@@ -156,7 +177,7 @@ def record_payment_for_invoice(invoice, user, data):
 
 
 def delete_payment(payment, user):
-    if not is_job_manager(user):
+    if not user.is_job_manager:
         raise PermissionError('Only administrators or supervisors can delete payments.')
     invoice = payment.invoice
     if not invoices_for_user(user).filter(pk=invoice.pk).exists():
@@ -167,34 +188,32 @@ def delete_payment(payment, user):
 
 
 def requisitions_for_user(user):
-    qs = Requisition.objects.select_related('organization', 'requested_by', 'job')
-    if is_job_manager(user):
+    qs = Requisition.objects.select_related('organization', 'branch', 'requested_by', 'job')
+    if user.is_job_manager:
         if user.organization_id:
             return qs.filter(organization_id=user.organization_id)
         return qs
-    return qs.filter(requested_by=user)
+    qs = qs.filter(requested_by=user)
+    if user.branch_id:
+        qs = qs.filter(branch_id=user.branch_id)
+    return qs
 
 
 def create_requisition(user, data):
-    from apps.organization.models import Organization
-
-    org_id = data.get('organization_id')
-    if user.is_superuser and org_id:
-        organization = Organization.objects.get(pk=org_id)
-    elif user.organization_id:
-        organization = Organization.objects.get(pk=user.organization_id)
-    else:
-        raise ValueError('Your account must belong to an organization.')
+    branch, organization = resolve_branch_for_user(user, data['branch_id'])
 
     job_id = data.get('job_id')
     job = None
     if job_id:
-        job = job_queryset_for_user(user).get(pk=job_id)
+        job = job_queryset_for_user(user).select_related('branch').get(pk=job_id)
         if job.organization_id != organization.id:
             raise ValueError('Job must belong to the same organization.')
+        if job.branch_id and str(job.branch_id) != str(branch.id):
+            raise ValueError('Job must belong to the same branch as the requisition.')
 
     return Requisition.objects.create(
         organization=organization,
+        branch=branch,
         requested_by=user,
         job=job,
         title=data['title'],
@@ -206,14 +225,16 @@ def create_requisition(user, data):
 
 
 def update_requisition(instance, user, data, partial=False):
-    if not is_job_manager(user) and instance.requested_by_id != user.id:
+    if not user.is_job_manager and instance.requested_by_id != user.id:
         raise PermissionError('You can only edit your own requisitions.')
     if 'job_id' in data:
         jid = data['job_id']
         if jid:
-            job = job_queryset_for_user(user).get(pk=jid)
+            job = job_queryset_for_user(user).select_related('branch').get(pk=jid)
             if job.organization_id != instance.organization_id:
                 raise ValueError('Job must belong to the same organization.')
+            if instance.branch_id and job.branch_id and str(job.branch_id) != str(instance.branch_id):
+                raise ValueError('Job must belong to the same branch as the requisition.')
             instance.job = job
         else:
             instance.job = None
@@ -229,8 +250,8 @@ def update_requisition(instance, user, data, partial=False):
 
 
 def delete_requisition(instance, user):
-    if not is_job_manager(user) and instance.requested_by_id != user.id:
+    if not user.is_job_manager and instance.requested_by_id != user.id:
         raise PermissionError('You can only delete your own requisitions.')
-    if not is_job_manager(user) and instance.status != Requisition.STATUS_DRAFT:
+    if not user.is_job_manager and instance.status != Requisition.STATUS_DRAFT:
         raise PermissionError('You can only delete draft requisitions.')
     instance.delete()

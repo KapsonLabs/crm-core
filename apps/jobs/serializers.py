@@ -2,6 +2,8 @@ from rest_framework import serializers
 
 from apps.accounts.serializers import UserDetailsSerializer
 from apps.customers.serializers import CustomerShortSerializer
+from apps.financials.models import Invoice
+from apps.financials.serializers import InvoiceForJobSerializer
 from apps.organization.serializers import OrganizationShortDetailsSerializer, BranchShortDetailsSerializer
 
 from .models import Job, JobAssignment, JobProduct, Product
@@ -15,21 +17,22 @@ class ProductSummarySerializer(serializers.ModelSerializer):
 
 class ProductSerializer(serializers.ModelSerializer):
     organization = OrganizationShortDetailsSerializer(read_only=True)
+    branch = BranchShortDetailsSerializer(read_only=True)
 
     class Meta:
         model = Product
         fields = [
-            'id', 'organization', 'kind', 'name', 'description', 'price',
+            'id', 'organization', 'branch', 'kind', 'name', 'description', 'price',
             'is_active', 'created_at', 'updated_at',
         ]
 
 
 class ProductCreateWriteSerializer(serializers.Serializer):
+    branch_id = serializers.UUIDField()
     kind = serializers.ChoiceField(choices=Product.KIND_CHOICES)
     name = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True, default='')
     price = serializers.DecimalField(max_digits=12, decimal_places=2)
-    organization_id = serializers.UUIDField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False, default=True)
 
 
@@ -84,17 +87,30 @@ class JobDetailSerializer(serializers.ModelSerializer):
     closed_by = UserDetailsSerializer(read_only=True)
     assignments = JobAssignmentSerializer(many=True, read_only=True)
     job_products = JobProductSerializer(many=True, read_only=True)
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Job
         fields = [
             'id', 'title', 'description', 'status',
             'customer', 'organization', 'branch',
-            'created_by', 'assignments', 'job_products',
+            'created_by', 'assignments', 'job_products', 'invoice',
             'completed_at', 'completed_by', 'completion_notes',
             'closed_at', 'closed_by', 'closing_notes',
             'created_at', 'updated_at',
         ]
+
+    def get_invoice(self, obj):
+        inv = (
+            Invoice.objects.filter(job_id=obj.pk)
+            .select_related('organization', 'branch', 'created_by')
+            .prefetch_related('payments__recorded_by')
+            .order_by('-created_at')
+            .first()
+        )
+        if inv is None:
+            return None
+        return InvoiceForJobSerializer(inv, context=self.context).data
 
 
 class JobProductLineWriteSerializer(serializers.Serializer):

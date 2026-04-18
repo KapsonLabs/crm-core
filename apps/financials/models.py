@@ -30,6 +30,13 @@ class Invoice(models.Model):
         on_delete=models.CASCADE,
         related_name='invoices',
     )
+    branch = models.ForeignKey(
+        'organization.Branch',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='invoices',
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -43,7 +50,7 @@ class Invoice(models.Model):
         choices=STATUS_CHOICES,
         default=STATUS_DRAFT,
     )
-    currency = models.CharField(max_length=10, default='USD')
+    currency = models.CharField(max_length=10, default='UGX')
     subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     tax_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
     total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
@@ -60,6 +67,7 @@ class Invoice(models.Model):
         indexes = [
             models.Index(fields=['organization', 'status']),
             models.Index(fields=['job']),
+            models.Index(fields=['branch', 'status']),
         ]
 
     def __str__(self):
@@ -126,6 +134,13 @@ class Requisition(models.Model):
         on_delete=models.CASCADE,
         related_name='requisitions',
     )
+    branch = models.ForeignKey(
+        'organization.Branch',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='requisitions',
+    )
     requested_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -141,7 +156,7 @@ class Requisition(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
-    currency = models.CharField(max_length=10, default='USD')
+    currency = models.CharField(max_length=10, default='UGX')
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
@@ -157,6 +172,7 @@ class Requisition(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['organization', 'status']),
+            models.Index(fields=['branch', 'status']),
         ]
 
     def __str__(self):

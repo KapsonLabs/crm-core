@@ -207,3 +207,14 @@ class IsRoleType(permissions.BasePermission):
         
         return False
 
+
+class IsJobManager(permissions.BasePermission):
+    """
+    Permission class for manager-level job and financial actions.
+    """
+
+    message = "Only administrators or supervisors can perform this action."
+
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.is_job_manager
+

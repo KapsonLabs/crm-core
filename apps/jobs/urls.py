@@ -16,10 +16,10 @@ app_name = 'jobs'
 urlpatterns = [
     path('products/', ProductListCreateView.as_view(), name='product-list-create'),
     path('products/<uuid:pk>/', ProductDetailView.as_view(), name='product-detail'),
-    path('jobs/<uuid:job_pk>/assign/', JobAssignView.as_view(), name='job-assign'),
-    path('jobs/<uuid:job_pk>/complete/', JobCompleteView.as_view(), name='job-complete'),
-    path('jobs/<uuid:job_pk>/close/', JobCloseView.as_view(), name='job-close'),
-    path('jobs/', JobListCreateView.as_view(), name='job-list-create'),
-    path('jobs/<uuid:pk>/', JobDetailView.as_view(), name='job-detail'),
+    path('<uuid:job_pk>/assign/', JobAssignView.as_view(), name='job-assign'),
+    path('<uuid:job_pk>/complete/', JobCompleteView.as_view(), name='job-complete'),
+    path('<uuid:job_pk>/close/', JobCloseView.as_view(), name='job-close'),
+    path('list/', JobListCreateView.as_view(), name='job-list-create'),
+    path('<uuid:pk>/', JobDetailView.as_view(), name='job-detail'),
     path('job-assignments/<uuid:pk>/', JobAssignmentDetailView.as_view(), name='job-assignment-detail'),
 ]

@@ -1,7 +1,10 @@
 from rest_framework import serializers
 
 from apps.accounts.serializers import UserDetailsSerializer
-from apps.organization.serializers import OrganizationShortDetailsSerializer
+from apps.organization.serializers import (
+    OrganizationShortDetailsSerializer,
+    BranchShortDetailsSerializer,
+)
 
 from .models import Customer, CustomerFeedback
 
@@ -14,21 +17,22 @@ class CustomerShortSerializer(serializers.ModelSerializer):
 
 class CustomerSerializer(serializers.ModelSerializer):
     organization = OrganizationShortDetailsSerializer(read_only=True)
+    branch = BranchShortDetailsSerializer(read_only=True)
 
     class Meta:
         model = Customer
         fields = [
-            'id', 'organization', 'first_name', 'last_name',
+            'id', 'organization', 'branch', 'first_name', 'last_name',
             'phone_number', 'email', 'is_active', 'created_at', 'updated_at',
         ]
 
 
 class CustomerCreateWriteSerializer(serializers.Serializer):
+    branch_id = serializers.UUIDField()
     first_name = serializers.CharField(max_length=100)
     last_name = serializers.CharField(max_length=100)
     phone_number = serializers.CharField(max_length=20)
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
-    organization_id = serializers.UUIDField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False, default=True)
 
 

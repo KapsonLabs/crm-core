@@ -5,8 +5,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import IsJobManager
 from apps.customers.models import Customer
-from apps.organization.models import Organization
+from apps.organization.models import Branch, Organization
 
 from .models import Job, JobAssignment
 from .serializers import (
@@ -22,7 +23,6 @@ from .serializers import (
     JobCloseSerializer,
 )
 from .services import (
-    is_job_manager,
     job_queryset_for_user,
     products_visible_for_user,
     create_product,
@@ -35,14 +35,6 @@ from .services import (
     close_job,
 )
 
-
-def _forbidden_manager():
-    return Response(
-        {'status': 403, 'message': 'Only administrators or supervisors can perform this action.'},
-        status=status.HTTP_403_FORBIDDEN,
-    )
-
-
 def _bad_request(message):
     return Response({'status': 400, 'message': message}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -52,7 +44,7 @@ def _job_detail_qs(user):
 
 
 class ProductListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def get(self, request):
         qs = products_visible_for_user(request.user)
@@ -62,6 +54,8 @@ class ProductListCreateView(APIView):
         kind = request.query_params.get('kind')
         if kind:
             qs = qs.filter(kind=kind)
+        if request.query_params.get('branch_id'):
+            qs = qs.filter(branch_id=request.query_params.get('branch_id'))
         qs = qs.order_by('name')
         return Response(
             {'status': 200, 'data': ProductSerializer(qs, many=True).data},
@@ -69,8 +63,6 @@ class ProductListCreateView(APIView):
         )
 
     def post(self, request):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         ser = ProductCreateWriteSerializer(data=request.data)
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -78,8 +70,8 @@ class ProductListCreateView(APIView):
             product = create_product(request.user, ser.validated_data)
         except ValueError as e:
             return _bad_request(str(e))
-        except Organization.DoesNotExist:
-            return _bad_request('Invalid organization.')
+        except Branch.DoesNotExist:
+            return _bad_request('Invalid branch.')
         return Response(
             {'status': 201, 'data': ProductSerializer(product).data},
             status=status.HTTP_201_CREATED,
@@ -87,7 +79,7 @@ class ProductListCreateView(APIView):
 
 
 class ProductDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def get_object(self, request, pk):
         return get_object_or_404(products_visible_for_user(request.user), pk=pk)
@@ -99,30 +91,7 @@ class ProductDetailView(APIView):
             status=status.HTTP_200_OK,
         )
 
-    def put(self, request, pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
-        obj = self.get_object(request, pk)
-        ser = ProductCreateWriteSerializer(data=request.data)
-        if not ser.is_valid():
-            return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            update_product(obj, request.user, ser.validated_data, partial=False)
-        except ValueError as e:
-            return _bad_request(str(e))
-        except PermissionError as e:
-            return Response({'status': 403, 'message': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except Organization.DoesNotExist:
-            return _bad_request('Invalid organization.')
-        obj.refresh_from_db()
-        return Response(
-            {'status': 200, 'data': ProductSerializer(obj).data},
-            status=status.HTTP_200_OK,
-        )
-
     def patch(self, request, pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         obj = self.get_object(request, pk)
         ser = ProductPatchWriteSerializer(data=request.data, partial=True)
         if not ser.is_valid():
@@ -133,8 +102,6 @@ class ProductDetailView(APIView):
             return _bad_request(str(e))
         except PermissionError as e:
             return Response({'status': 403, 'message': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except Organization.DoesNotExist:
-            return _bad_request('Invalid organization.')
         obj.refresh_from_db()
         return Response(
             {'status': 200, 'data': ProductSerializer(obj).data},
@@ -142,8 +109,6 @@ class ProductDetailView(APIView):
         )
 
     def delete(self, request, pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         obj = self.get_object(request, pk)
         try:
             delete_product(obj, request.user)
@@ -164,8 +129,11 @@ class JobListCreateView(APIView):
         st = request.query_params.get('status')
         if st:
             qs = qs.filter(status=st)
-        if is_job_manager(request.user) and request.query_params.get('organization_id'):
+        if request.user.is_job_manager and request.query_params.get('organization_id'):
             qs = qs.filter(organization_id=request.query_params.get('organization_id'))
+        bid = request.query_params.get('branch_id')
+        if bid:
+            qs = qs.filter(branch_id=bid)
         qs = qs.order_by('-created_at')
         return Response(
             {'status': 200, 'data': JobListSerializer(qs, many=True).data},
@@ -180,8 +148,8 @@ class JobListCreateView(APIView):
             job = create_job(request.user, ser.validated_data)
         except ValueError as e:
             return _bad_request(str(e))
-        except (Organization.DoesNotExist, Customer.DoesNotExist):
-            return _bad_request('Invalid customer or organization.')
+        except (Organization.DoesNotExist, Customer.DoesNotExist, Branch.DoesNotExist):
+            return _bad_request('Invalid customer, organization, or branch.')
         job = _job_detail_qs(request.user).annotate(
             assignee_count=Count('assignments', distinct=True),
         ).get(pk=job.pk)
@@ -216,8 +184,8 @@ class JobDetailView(APIView):
             return _bad_request(str(e))
         except PermissionError as e:
             return Response({'status': 403, 'message': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except (Organization.DoesNotExist, Customer.DoesNotExist):
-            return _bad_request('Invalid customer or organization.')
+        except (Organization.DoesNotExist, Customer.DoesNotExist, Branch.DoesNotExist):
+            return _bad_request('Invalid customer, organization, or branch.')
         job = _job_detail_qs(request.user).get(pk=job.pk)
         return Response(
             {'status': 200, 'data': JobDetailSerializer(job).data},
@@ -235,8 +203,8 @@ class JobDetailView(APIView):
             return _bad_request(str(e))
         except PermissionError as e:
             return Response({'status': 403, 'message': str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except (Organization.DoesNotExist, Customer.DoesNotExist):
-            return _bad_request('Invalid customer or organization.')
+        except (Organization.DoesNotExist, Customer.DoesNotExist, Branch.DoesNotExist):
+            return _bad_request('Invalid customer, organization, or branch.')
         job = _job_detail_qs(request.user).get(pk=job.pk)
         return Response(
             {'status': 200, 'data': JobDetailSerializer(job).data},
@@ -245,7 +213,7 @@ class JobDetailView(APIView):
 
     def delete(self, request, pk):
         job = self.get_object(request, pk)
-        if is_job_manager(request.user):
+        if request.user.is_job_manager:
             job.delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
         if job.created_by_id == request.user.id and job.status == Job.STATUS_OPEN:
@@ -258,11 +226,9 @@ class JobDetailView(APIView):
 
 
 class JobAssignView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def post(self, request, job_pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         job = get_object_or_404(job_queryset_for_user(request.user), pk=job_pk)
         ser = JobAssignSerializer(data=request.data)
         if not ser.is_valid():
@@ -278,11 +244,9 @@ class JobAssignView(APIView):
 
 
 class JobAssignmentDetailView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def delete(self, request, pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         assignment = get_object_or_404(
             JobAssignment.objects.select_related('job'),
             pk=pk,
@@ -293,11 +257,9 @@ class JobAssignmentDetailView(APIView):
 
 
 class JobCompleteView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def post(self, request, job_pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         job = get_object_or_404(job_queryset_for_user(request.user), pk=job_pk)
         ser = JobCompleteSerializer(data=request.data)
         if not ser.is_valid():
@@ -314,11 +276,9 @@ class JobCompleteView(APIView):
 
 
 class JobCloseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def post(self, request, job_pk):
-        if not is_job_manager(request.user):
-            return _forbidden_manager()
         job = get_object_or_404(job_queryset_for_user(request.user), pk=job_pk)
         ser = JobCloseSerializer(data=request.data)
         if not ser.is_valid():

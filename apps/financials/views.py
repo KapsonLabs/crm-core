@@ -1,12 +1,13 @@
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.jobs.models import Job
-from apps.jobs.services import is_job_manager
-from apps.organization.models import Organization
+from apps.accounts.permissions import IsJobManager
+from apps.organization.models import Branch
 
 from .models import Invoice, InvoicePayment, Requisition
 from .serializers import (
@@ -46,22 +47,24 @@ class InvoiceListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        """List invoices. Query params: status, branch_id (job branch), job_id."""
         qs = invoices_for_user(request.user)
         st = request.query_params.get('status')
         if st:
             qs = qs.filter(status=st)
+        bid = request.query_params.get('branch_id')
+        if bid:
+            qs = qs.filter(branch_id=bid)
         jid = request.query_params.get('job_id')
         if jid:
             qs = qs.filter(job_id=jid)
-        qs = qs.order_by('-issued_at', '-created_at')
+        qs = qs.order_by('branch_id', 'job__branch_id', '-issued_at', '-created_at')
         return Response(
             {'status': 200, 'data': InvoiceListSerializer(qs, many=True).data},
             status=status.HTTP_200_OK,
         )
 
     def post(self, request):
-        if not is_job_manager(request.user):
-            return _denied('Only administrators or supervisors can create invoices.')
         ser = InvoiceCreateWriteSerializer(data=request.data)
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -71,6 +74,8 @@ class InvoiceListCreateView(APIView):
             return _bad(str(e))
         except Job.DoesNotExist:
             return _bad('Invalid job.')
+        except Branch.DoesNotExist:
+            return _bad('Invalid branch.')
         inv = invoices_for_user(request.user).prefetch_related('payments').get(pk=inv.pk)
         return Response(
             {'status': 201, 'data': InvoiceDetailSerializer(inv).data},
@@ -80,6 +85,11 @@ class InvoiceListCreateView(APIView):
 
 class InvoiceDetailView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method in {'PATCH', 'DELETE'}:
+            return [IsAuthenticated(), IsJobManager()]
+        return [IsAuthenticated()]
 
     def get_object(self, request, pk):
         return get_object_or_404(invoices_for_user(request.user), pk=pk)
@@ -93,8 +103,6 @@ class InvoiceDetailView(APIView):
         )
 
     def patch(self, request, pk):
-        if not is_job_manager(request.user):
-            return _denied('Only administrators or supervisors can update invoices.')
         inv = self.get_object(request, pk)
         ser = InvoicePatchWriteSerializer(data=request.data, partial=True)
         if not ser.is_valid():
@@ -112,8 +120,6 @@ class InvoiceDetailView(APIView):
         )
 
     def delete(self, request, pk):
-        if not is_job_manager(request.user):
-            return _denied('Only administrators or supervisors can delete invoices.')
         inv = self.get_object(request, pk)
         inv.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
@@ -136,11 +142,9 @@ class InvoiceVoidView(APIView):
 
 
 class InvoicePaymentListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsJobManager]
 
     def post(self, request, invoice_pk):
-        if not is_job_manager(request.user):
-            return _denied('Only administrators or supervisors can record payments.')
         inv = get_object_or_404(invoices_for_user(request.user), pk=invoice_pk)
         ser = InvoicePaymentWriteSerializer(data=request.data)
         if not ser.is_valid():
@@ -182,6 +186,9 @@ class RequisitionListCreateView(APIView):
         st = request.query_params.get('status')
         if st:
             qs = qs.filter(status=st)
+        bid = request.query_params.get('branch_id')
+        if bid:
+            qs = qs.filter(branch_id=bid)
         qs = qs.order_by('-created_at')
         return Response(
             {'status': 200, 'data': RequisitionSerializer(qs, many=True).data},
@@ -198,8 +205,8 @@ class RequisitionListCreateView(APIView):
             return _bad(str(e))
         except Job.DoesNotExist:
             return _bad('Invalid job.')
-        except Organization.DoesNotExist:
-            return _bad('Invalid organization.')
+        except Branch.DoesNotExist:
+            return _bad('Invalid branch.')
         return Response(
             {'status': 201, 'data': RequisitionSerializer(req).data},
             status=status.HTTP_201_CREATED,

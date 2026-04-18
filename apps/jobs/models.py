@@ -19,6 +19,13 @@ class Product(models.Model):
         on_delete=models.CASCADE,
         related_name='products',
     )
+    branch = models.ForeignKey(
+        'organization.Branch',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='products',
+    )
     kind = models.CharField(max_length=20, choices=KIND_CHOICES)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -35,6 +42,7 @@ class Product(models.Model):
         indexes = [
             models.Index(fields=['organization', 'is_active']),
             models.Index(fields=['organization', 'kind']),
+            models.Index(fields=['branch', 'is_active']),
         ]
 
     def __str__(self):

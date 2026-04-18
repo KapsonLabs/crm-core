@@ -198,6 +198,15 @@ class User(AbstractUser):
 
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+    @property
+    def is_job_manager(self):
+        if self.is_superuser or self.is_staff:
+            return True
+        role = self.role
+        if not role or not role.is_active:
+            return False
+        return role.name == "Supervisor" or role.slug in {"supervisor", "manager"}
     
     def has_perm(self, perm, obj=None):
         """

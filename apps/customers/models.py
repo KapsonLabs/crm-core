@@ -11,6 +11,13 @@ class Customer(models.Model):
         on_delete=models.CASCADE,
         related_name='customers',
     )
+    branch = models.ForeignKey(
+        'organization.Branch',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='customers',
+    )
     first_name = models.CharField(max_length=100)
     last_name = models.CharField(max_length=100)
     phone_number = models.CharField(max_length=20)
@@ -26,6 +33,7 @@ class Customer(models.Model):
         verbose_name_plural = _('customers')
         indexes = [
             models.Index(fields=['organization', 'last_name', 'first_name']),
+            models.Index(fields=['branch', 'last_name', 'first_name']),
         ]
 
     def __str__(self):
