@@ -77,11 +77,13 @@ class Invoice(models.Model):
 class InvoicePayment(models.Model):
     METHOD_CASH = 'cash'
     METHOD_CARD = 'card'
+    METHOD_MOBILE_MONEY = 'mobile_money'
     METHOD_BANK_TRANSFER = 'bank_transfer'
     METHOD_OTHER = 'other'
     METHOD_CHOICES = [
         (METHOD_CASH, _('Cash')),
         (METHOD_CARD, _('Card')),
+        (METHOD_MOBILE_MONEY, _('Mobile money')),
         (METHOD_BANK_TRANSFER, _('Bank transfer')),
         (METHOD_OTHER, _('Other')),
     ]
@@ -93,7 +95,7 @@ class InvoicePayment(models.Model):
         related_name='payments',
     )
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    paid_at = models.DateTimeField()
+    paid_at = models.DateTimeField(auto_now_add=True)
     method = models.CharField(max_length=20, choices=METHOD_CHOICES, default=METHOD_OTHER)
     reference = models.CharField(max_length=255, blank=True)
     recorded_by = models.ForeignKey(

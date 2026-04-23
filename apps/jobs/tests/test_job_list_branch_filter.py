@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django.urls import reverse
@@ -107,6 +108,12 @@ class JobCreateAndListIntegrationTests(APITestCase):
             name='Air Filter',
             price=Decimal('10000.00'),
         )
+        cls.assignee = User.objects.create_user(
+            email='assignee@example.com',
+            username='assignee',
+            password='testpass123',
+            organization=cls.org,
+        )
 
     def setUp(self):
         self.client.force_authenticate(self.user)
@@ -134,3 +141,28 @@ class JobCreateAndListIntegrationTests(APITestCase):
         self.assertEqual(r2.status_code, status.HTTP_200_OK)
         ids = [j['id'] for j in r2.data['data']]
         self.assertIn(job_id, ids)
+
+    def test_create_job_with_phone_and_user_ids(self):
+        url = reverse('jobs:job-list-create')
+        unknown_id = str(uuid.uuid4())
+        payload = {
+            'customer_id': str(self.customer.id),
+            'title': 'Job with contact',
+            'branch_id': str(self.branch.id),
+            'phone_number': '+256700111222',
+            'user_ids': [str(self.assignee.id), unknown_id],
+            'job_products': [],
+        }
+        r = self.client.post(url, payload, format='json')
+        self.assertEqual(r.status_code, status.HTTP_201_CREATED, r.data)
+        self.assertEqual(r.data['data']['phone_number'], '+256700111222')
+        self.assertIn('unassigned_user_ids', r.data)
+        self.assertIn(unknown_id, r.data['unassigned_user_ids'])
+        self.assertIn('message', r.data)
+        assignee_ids = {str(a['user']['id']) for a in r.data['data']['assignments']}
+        self.assertIn(str(self.assignee.id), assignee_ids)
+
+        r2 = self.client.get(url, {'branch_id': str(self.branch.id)})
+        self.assertEqual(r2.status_code, status.HTTP_200_OK)
+        created = next(j for j in r2.data['data'] if j['id'] == r.data['data']['id'])
+        self.assertEqual(created['phone_number'], '+256700111222')

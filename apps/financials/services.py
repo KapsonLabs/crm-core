@@ -149,13 +149,11 @@ def record_payment(user, data):
     amount = Decimal(str(data['amount']))
     if amount <= 0:
         raise ValueError('Amount must be positive.')
-    paid_at = data['paid_at']
     method = data.get('method', InvoicePayment.METHOD_OTHER)
     reference = data.get('reference', '')
     pay = InvoicePayment.objects.create(
         invoice=invoice,
         amount=amount,
-        paid_at=paid_at,
         method=method,
         reference=reference,
         recorded_by=user,
@@ -169,7 +167,6 @@ def record_payment_for_invoice(invoice, user, data):
     payload = {
         'invoice_id': invoice.id,
         'amount': data['amount'],
-        'paid_at': data['paid_at'],
         'method': data.get('method', InvoicePayment.METHOD_OTHER),
         'reference': data.get('reference', ''),
     }

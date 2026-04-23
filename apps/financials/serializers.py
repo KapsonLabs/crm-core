@@ -117,8 +117,8 @@ class InvoicePatchWriteSerializer(serializers.Serializer):
 
 
 class InvoicePaymentWriteSerializer(serializers.Serializer):
+    invoice_id = serializers.UUIDField()
     amount = serializers.DecimalField(max_digits=12, decimal_places=2)
-    paid_at = serializers.DateTimeField()
     method = serializers.ChoiceField(
         choices=InvoicePayment.METHOD_CHOICES,
         required=False,

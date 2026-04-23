@@ -145,7 +145,7 @@ class JobListCreateView(APIView):
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
         try:
-            job = create_job(request.user, ser.validated_data)
+            job, missing = create_job(request.user, ser.validated_data)
         except ValueError as e:
             return _bad_request(str(e))
         except (Organization.DoesNotExist, Customer.DoesNotExist, Branch.DoesNotExist):
@@ -153,8 +153,14 @@ class JobListCreateView(APIView):
         job = _job_detail_qs(request.user).annotate(
             assignee_count=Count('assignments', distinct=True),
         ).get(pk=job.pk)
+        payload = {'status': 201, 'data': JobDetailSerializer(job).data}
+        if missing:
+            payload['unassigned_user_ids'] = missing
+            payload['message'] = (
+                'Some user IDs were skipped (wrong organization, inactive, or invalid).'
+            )
         return Response(
-            {'status': 201, 'data': JobDetailSerializer(job).data},
+            payload,
             status=status.HTTP_201_CREATED,
         )
 

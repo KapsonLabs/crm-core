@@ -144,13 +144,15 @@ class InvoiceVoidView(APIView):
 class InvoicePaymentListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsJobManager]
 
-    def post(self, request, invoice_pk):
-        inv = get_object_or_404(invoices_for_user(request.user), pk=invoice_pk)
+    def post(self, request):
         ser = InvoicePaymentWriteSerializer(data=request.data)
         if not ser.is_valid():
             return Response(ser.errors, status=status.HTTP_400_BAD_REQUEST)
+        validated = ser.validated_data.copy()
+        invoice_id = validated.pop('invoice_id')
+        inv = get_object_or_404(invoices_for_user(request.user), pk=invoice_id)
         try:
-            pay = record_payment_for_invoice(inv, request.user, ser.validated_data)
+            pay = record_payment_for_invoice(inv, request.user, validated)
         except ValueError as e:
             return _bad(str(e))
         except PermissionError as e:

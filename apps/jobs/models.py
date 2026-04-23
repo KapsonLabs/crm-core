@@ -81,6 +81,7 @@ class Job(models.Model):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    phone_number = models.CharField(max_length=20, blank=True, default='')
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,

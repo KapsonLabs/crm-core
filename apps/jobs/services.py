@@ -7,6 +7,7 @@ from .models import Job, JobAssignment, JobProduct, Product
 from apps.organization.models import Organization, Branch
 from apps.organization.services import resolve_branch_for_user
 from apps.customers.models import Customer
+from django.utils import timezone
 
 
 def products_visible_for_user(user):
@@ -148,6 +149,7 @@ def create_job(user, data):
     job_products_data = raw.pop('job_products', None)
     if job_products_data is None:
         job_products_data = []
+    user_ids = raw.pop('user_ids', None) or []
 
     customer_id = raw['customer_id']
     branch_id = raw.get('branch_id')
@@ -155,6 +157,7 @@ def create_job(user, data):
     status = raw.get('status', Job.STATUS_OPEN)
     title = raw['title']
     description = raw.get('description', '')
+    phone_number = raw.get('phone_number', '')
 
     if status in (Job.STATUS_COMPLETED, Job.STATUS_CLOSED):
         raise ValueError('Use the complete or close endpoints for this status.')
@@ -200,6 +203,7 @@ def create_job(user, data):
             created_by=user,
             title=title,
             description=description,
+            phone_number=phone_number,
             status=status,
         )
         lines = _build_job_product_lines(job, job_products_data)
@@ -216,13 +220,18 @@ def create_job(user, data):
         if job.branch_id:
             inv_payload['branch_id'] = job.branch_id
         create_invoice(user, inv_payload)
+        _, missing_user_ids = assign_users_to_job(job, user_ids, user)
 
-    return job
+    return job, missing_user_ids
 
 
 def update_job(user, instance, data, partial=False):
 
-    data = {k: v for k, v in data.items() if k not in ('organization_id', 'job_products')}
+    data = {
+        k: v
+        for k, v in data.items()
+        if k not in ('organization_id', 'job_products', 'user_ids')
+    }
 
     if not user.is_job_manager and instance.created_by_id != user.id:
         raise PermissionError('You can only edit jobs you created.')
@@ -250,7 +259,7 @@ def update_job(user, instance, data, partial=False):
         else:
             instance.branch = Branch.objects.get(pk=bid, organization_id=instance.organization_id)
 
-    for attr in ('title', 'description', 'status'):
+    for attr in ('title', 'description', 'status', 'phone_number'):
         if attr in data:
             setattr(instance, attr, data[attr])
 
@@ -288,7 +297,6 @@ def complete_job(job, user, notes=''):
     if job.status == Job.STATUS_COMPLETED:
         return job
     job.status = Job.STATUS_COMPLETED
-    from django.utils import timezone
     job.completed_at = timezone.now()
     job.completed_by = user
     if notes:
@@ -301,7 +309,6 @@ def close_job(job, user, notes=''):
     if job.status == Job.STATUS_CLOSED:
         return job
     job.status = Job.STATUS_CLOSED
-    from django.utils import timezone
     job.closed_at = timezone.now()
     job.closed_by = user
     if notes:

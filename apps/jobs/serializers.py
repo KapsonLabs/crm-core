@@ -72,7 +72,7 @@ class JobListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Job
         fields = [
-            'id', 'title', 'status', 'customer', 'created_by', 'assignee_count',
+            'id', 'title', 'status', 'phone_number', 'customer', 'created_by', 'assignee_count',
             'job_products',
             'created_at', 'updated_at',
         ]
@@ -92,7 +92,7 @@ class JobDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = Job
         fields = [
-            'id', 'title', 'description', 'status',
+            'id', 'title', 'description', 'status', 'phone_number',
             'customer', 'organization', 'branch',
             'created_by', 'assignments', 'job_products', 'invoice',
             'completed_at', 'completed_by', 'completion_notes',
@@ -134,6 +134,17 @@ class JobCreateWriteSerializer(serializers.Serializer):
     organization_id = serializers.UUIDField(required=False, allow_null=True)
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True, default='')
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+        default='',
+    )
+    user_ids = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+    )
     status = serializers.ChoiceField(
         choices=Job.STATUS_CHOICES,
         required=False,
@@ -147,6 +158,11 @@ class JobPatchWriteSerializer(serializers.Serializer):
     branch_id = serializers.UUIDField(required=False, allow_null=True)
     title = serializers.CharField(max_length=255, required=False)
     description = serializers.CharField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(
+        max_length=20,
+        required=False,
+        allow_blank=True,
+    )
     status = serializers.ChoiceField(choices=Job.STATUS_CHOICES, required=False)
 
 

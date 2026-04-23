@@ -127,7 +127,7 @@ def totals(
     )
     total_jobs = jobs_qs.count()
 
-    inv_qs = invoices_base_qs(organization_id, branch_id).filter(
+    inv_qs = invoices_base_qs(organization_id, branch_id).filter(status__in=[Invoice.STATUS_PAID]).filter(
         issued_at__gte=d0,
         issued_at__lte=d1,
     )
