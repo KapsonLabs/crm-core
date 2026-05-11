@@ -1,0 +1,1 @@
+python -m pytest tests.py --tb=short -q 2>&1 | head -80
