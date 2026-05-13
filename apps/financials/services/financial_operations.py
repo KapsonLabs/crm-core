@@ -81,7 +81,7 @@ def create_invoice(user, data):
     subtotal = Decimal(str(data.get('subtotal', '0.00')))
     tax_amount = Decimal(str(data.get('tax_amount', '0.00')))
     total = Decimal(str(data.get('total', subtotal + tax_amount)))
-    currency = data.get('currency', 'USD')
+    currency = data.get('currency', 'UGX')
     status = data.get('status', Invoice.STATUS_SENT)
     notes = data.get('notes', '')
     issued_at = data.get('issued_at')
@@ -182,12 +182,13 @@ def record_payment(user, data):
     amount = Decimal(str(data['amount']))
     if amount <= 0:
         raise ValueError('Amount must be positive.')
-    method = data.get('method', InvoicePayment.METHOD_OTHER)
+    from apps.financials.models import PaymentMethod
+    payment_method = PaymentMethod.objects.get(pk=data['payment_method_id'])
     reference = data.get('reference', '')
     pay = InvoicePayment.objects.create(
         invoice=invoice,
         amount=amount,
-        method=method,
+        method=payment_method,
         reference=reference,
         recorded_by=user,
     )
@@ -207,7 +208,7 @@ def record_payment_for_invoice(invoice, user, data):
     payload = {
         'invoice_id': invoice.id,
         'amount': data['amount'],
-        'method': data.get('method', InvoicePayment.METHOD_OTHER),
+        'payment_method_id': data['payment_method_id'],
         'reference': data.get('reference', ''),
     }
     return record_payment(user, payload)
@@ -268,7 +269,7 @@ def create_requisition(user, data):
         title=data['title'],
         description=data.get('description', ''),
         amount=Decimal(str(data.get('amount', '0.00'))),
-        currency=data.get('currency', 'USD'),
+        currency=data.get('currency', 'UGX'),
         status=data.get('status', Requisition.STATUS_DRAFT),
     )
 

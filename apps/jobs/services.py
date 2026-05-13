@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.db import transaction
@@ -8,6 +9,8 @@ from apps.organization.models import Organization, Branch
 from apps.organization.services import resolve_branch_for_user
 from apps.customers.models import Customer
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 def products_visible_for_user(user):
@@ -24,7 +27,10 @@ def products_visible_for_user(user):
     return qs.none()
 
 
+@transaction.atomic
 def create_product(user, data):
+    from .product_accounting_service import create_product_subledger
+
     branch, organization = resolve_branch_for_user(user, data['branch_id'])
     name = data['name']
     kind = data['kind']
@@ -32,7 +38,7 @@ def create_product(user, data):
     price = Decimal(str(data['price']))
     is_active = data.get('is_active', True)
 
-    return Product.objects.create(
+    product = Product.objects.create(
         organization=organization,
         branch=branch,
         kind=kind,
@@ -41,6 +47,15 @@ def create_product(user, data):
         price=price,
         is_active=is_active,
     )
+
+    if kind == 'product':
+        try:
+            create_product_subledger(product)
+        except Exception:
+            logger.exception("Failed to create inventory subledgers for product %s", product.id)
+            raise
+
+    return product
 
 
 def update_product(instance, user, data, partial=False):

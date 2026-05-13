@@ -18,6 +18,7 @@ from .serializers import (
     BranchSettingsSerializer,
     BranchUserSerializer,
 )
+from .services import create_branch
 
 
 # -----------------------------------------------------------------------------
@@ -109,6 +110,13 @@ class BranchListCreateView(generics.ListCreateAPIView):
         if organization_id:
             queryset = queryset.filter(organization__id=organization_id)
         return queryset
+
+    def perform_create(self, serializer):
+        organization_id = serializer.validated_data["organization_id"]
+        organization = Organization.objects.get(pk=organization_id)
+        branch = create_branch(organization, serializer.validated_data)
+        # Attach the created instance so the serializer can return it
+        serializer.instance = branch
 
 
 class BranchDetailView(generics.RetrieveUpdateAPIView):

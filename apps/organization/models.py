@@ -6,12 +6,20 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from apps.accounts.models import Role
 
+BUSINESS_TYPE_CHOICES = [
+    ("general", "General"),
+    ("inventory", "Inventory"),
+    ("microfinance", "Microfinance"),
+    ("real_estate", "Real Estate"),
+    ("all", "All"),
+]
 
 class Organization(models.Model):
     """Represents a top-level organization (e.g., company or NGO)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, unique=True)
+    business_type = models.CharField(max_length=255, choices=BUSINESS_TYPE_CHOICES, default="inventory")  
     description = models.TextField(blank=True)
     email = models.EmailField(blank=True, null=True)
     phone_number = models.CharField(max_length=25, blank=True, null=True)

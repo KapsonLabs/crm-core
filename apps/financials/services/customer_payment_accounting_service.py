@@ -2,31 +2,16 @@ from __future__ import annotations
 
 import logging
 from datetime import date
-from decimal import Decimal
 from uuid import UUID
 
 from django.db import transaction
 
 from apps.ledgers.constants import DEFAULT_CURRENCY
-from apps.ledgers.services.helpers import get_configured_account
 from apps.ledgers.services.journal_service import reverse_journal_entry
 from apps.ledgers.services.receivable_service import allocate_customer_payment
 from apps.ledgers.utils.currency import get_exchange_rate
 
 logger = logging.getLogger(__name__)
-
-PAYMENT_METHOD_ACCOUNT_MAP = {
-    "cash": "cash_on_hand",
-    "card": "cash_and_cash_equivalent_control",
-    "mobile_money": "electronic_money_control",
-    "bank_transfer": "cash_and_cash_equivalent_control",
-    "other": "cash_and_cash_equivalent_control",
-}
-
-
-def _resolve_cash_account(method: str, branch: UUID | None):
-    account_key = PAYMENT_METHOD_ACCOUNT_MAP.get(method, "cash_and_cash_equivalent_control")
-    return get_configured_account(account_key, branch)
 
 
 @transaction.atomic
@@ -36,7 +21,7 @@ def post_customer_payment(payment) -> object:
     branch_id = invoice.branch_id
     currency = invoice.currency
 
-    cash_account = _resolve_cash_account(payment.method, branch_id)
+    cash_account = payment.method.account
 
     original_foreign_amount = None
     original_exchange_rate = None

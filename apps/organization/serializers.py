@@ -19,6 +19,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "name",
+            "business_type",
             "description",
             "email",
             "phone_number",

@@ -73,6 +73,10 @@ def post_supplier_invoice_with_tax(
     total = net_amount + tax_amount
     invoice_ref = str(lpo.lpo_number or lpo.id)
 
+    from apps.ledgers.services.payable_service import _get_ap_subledger
+
+    ap_subledger = _get_ap_subledger(str(supplier.id), branch_id)
+
     lines = [
         JournalLineInput(
             account_id=expense_account.id,
@@ -103,6 +107,7 @@ def post_supplier_invoice_with_tax(
             branch=branch_id,
             party_type="supplier",
             party_id=str(supplier.id),
+            subledger_account_id=ap_subledger.id,
         ),
     ]
 

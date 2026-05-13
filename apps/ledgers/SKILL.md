@@ -582,6 +582,122 @@ post_loan_disbursement(
 
 ---
 
+## Payment method accounts
+
+Every `PaymentMethod` in the `financials` app owns exactly one dedicated GL `Account`. The account is created atomically inside `create_payment_method()` and linked via `PaymentMethod.account` (FK). **Never use `AccountingConfiguration` to resolve a cash account for a payment posting** — use the FK directly.
+
+### Account type → GL code range
+
+| `account_type` | Code range | Parent category | Notes |
+|---|---|---|---|
+| `cash` | `1000` (existing) | `cash_on_hand` | Links to the seeded Cash on Hand account; no new account created |
+| `bank` | `1051–1059` | `cash_and_cash_equivalent_control` | One account per bank account |
+| `card` | `1061–1069` | `cash_and_cash_equivalent_control` | One account per card terminal / POS |
+| `mobile_money` | `1071–1079` | `electronic_money_control` | One account per mobile money provider |
+| `cheque` | `1081–1089` | `cash_and_cash_equivalent_control` | One account per cheque clearing point |
+
+**Important:** Accounts `1001` (Cash and Cash Equivalent Control) and `1010` (Electronic Money Control) are aggregation-only parents. They are seeded with `allows_manual_posting=False`. Never post a journal line to these accounts. They exist so the balance sheet can aggregate all cash/bank/mobile balances under one line.
+
+### Creating a payment method
+
+Always use the service, never create the model directly:
+
+```python
+from apps.financials.services.payment_method_service import create_payment_method
+
+method = create_payment_method(
+    branch_id=branch.id,
+    name="MTN Mobile Money",
+    code="mtn_mobile_money",
+    account_type="mobile_money",
+    description="MTN Uganda MoMo collections",
+)
+# method.account → Account(code="1071", name="MTN Mobile Money", ...)
+```
+
+The service auto-assigns the next available code in the range for the branch and fails atomically if the range is exhausted.
+
+### Using the account in posting services
+
+```python
+# customer_payment_accounting_service.py / supplier_payment_accounting_service.py
+cash_account = payment.method.account   # direct FK — no AccountingConfiguration lookup needed
+```
+
+### Seeding default payment methods for a branch
+
+Call this after `seed_default_chart_of_accounts` when a new branch is created:
+
+```python
+from apps.ledgers.seed import seed_default_payment_methods
+
+seed_default_payment_methods(branch_id=branch.id)
+```
+
+This creates Cash, Card, Mobile Money, Bank Transfer, and Cheque payment methods for the branch, each with their own GL account.
+
+---
+
+## Banking
+
+### `BankAccount` model
+
+`BankAccount` (in `apps/financials`) represents a real-world bank relationship. Creating one atomically creates a `PaymentMethod` of `account_type="bank"` which in turn creates the GL account in range `1051–1059`.
+
+```python
+from apps.financials.services.bank_account_service import create_bank_account
+
+bank = create_bank_account(
+    branch_id=branch.id,
+    bank_name="Stanbic Bank Uganda",
+    account_name="Main Operating Account",
+    account_number="9030012345",     # stored masked — only last 4 shown
+    currency="UGX",
+)
+# bank.payment_method.account → Account(code="1051", name="Stanbic Bank Uganda — Main Operating Account")
+```
+
+### Bank reconciliation
+
+Use the existing `reconcile_bank_statement()` service. The target account is resolved through the bank's payment method:
+
+```python
+from apps.ledgers.services.reconciliation_service import reconcile_bank_statement
+
+result = reconcile_bank_statement(
+    bank_account_id=bank.payment_method.account.id,  # the bank's dedicated GL account
+    statement_lines=parsed_lines,                    # list[BankStatementLine]
+    branch=branch.id,
+    performed_by_id=user.id,
+    require_full_match=False,
+)
+# result keys: matched, unmatched, matched_count, unmatched_count, is_fully_reconciled
+```
+
+### Bank account GL structure
+
+Following the **Dynamics 365 pattern**: each bank account has its own dedicated GL account. The SAP pattern (Bank Reconciliation Account → Bank Sub Accounts) is not used.
+
+- Each bank/mobile money account = one GL `Account` (asset, `allows_manual_posting=True`)
+- Control accounts `1001` and `1010` aggregate for balance sheet reporting but are never posting targets
+- No clearing/bridging accounts at MVP; these can be added per-bank later as a `PaymentMethod` of `account_type="clearing"` in a reserved range
+
+### Journal pattern for a customer payment via bank
+
+```
+DR  1051  Stanbic Bank Uganda — Main Operating Account   (payment_method.account)
+CR  1100  Accounts Receivable                            (AR control, with subledger ref)
+```
+
+### Journal pattern for a supplier payment via bank
+
+```
+DR  2000  Accounts Payable                               (AP control, with subledger ref)
+CR  1051  Stanbic Bank Uganda — Main Operating Account   (payment_method.account)
+```
+
+---
+
 ## Entity types for subledger creation
 
 `create_default_entity_accounts()` accepts the following `entity_type` values. Each creates a distinct set of subledgers linked to their parent control accounts.

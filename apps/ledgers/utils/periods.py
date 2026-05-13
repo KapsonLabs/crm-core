@@ -17,12 +17,19 @@ def get_open_period(posting_date: date, branch: UUID | None = None) -> FiscalPer
         period = queryset.filter(branch=branch).first()
         if period:
             return period
-        queryset = queryset.filter(branch__isnull=True)
-    else:
-        queryset = queryset.filter(branch__isnull=True)
-    period = queryset.first()
+        global_period = queryset.filter(branch__isnull=True).first()
+        if global_period:
+            return global_period
+        raise FiscalPeriodClosedError(
+            f"No open fiscal period found for {posting_date} on this branch. "
+            "Please open or create a fiscal period that covers this date before posting."
+        )
+    period = queryset.filter(branch__isnull=True).first()
     if period is None:
-        raise FiscalPeriodClosedError("No open fiscal period available for posting date.")
+        raise FiscalPeriodClosedError(
+            f"No open fiscal period found for {posting_date}. "
+            "Please open or create a fiscal period that covers this date before posting."
+        )
     return period
 
 

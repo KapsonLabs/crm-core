@@ -9,25 +9,57 @@ from apps.ledgers.models import Account, AccountingConfiguration, Currency
 # ---------------------------------------------------------------------------
 #
 # Account number ranges:
-#   1000-1099  Cash & liquid assets
+#   1000       Cash on Hand — physical cash at tills; owned by the "Cash" payment method
+#   1001       Cash & Cash Equivalent Control — aggregation parent for bank/card accounts
+#              REPORTING ONLY — allows_manual_posting=False; do not post directly to this account
+#   1010       Electronic Money Control — aggregation parent for mobile money/wallet accounts
+#              REPORTING ONLY — allows_manual_posting=False; do not post directly to this account
+#
+#   1050-1059  RESERVED — bank / direct-debit payment method accounts (auto-assigned)
+#   1060-1069  RESERVED — card / POS payment method accounts (auto-assigned)
+#   1070-1079  RESERVED — mobile money / wallet payment method accounts (auto-assigned)
+#   1080-1089  RESERVED — cheque payment method accounts (auto-assigned)
+#
+#   These ranges are NOT seeded here. Each account in 1050-1089 is created
+#   atomically when a PaymentMethod is created via create_payment_method().
+#   The code generator (_next_payment_account_code) selects the next available
+#   code within the appropriate range for the branch.
+#
 #   1100-1199  Receivables
 #   1200-1299  Other current assets / prepayments
+#   1300-1399  Inventory assets
+#   1400-1499  Loan receivables (microfinance)
 #   1500-1599  Fixed assets / PPE
+#   1600-1699  Property assets (real estate)
 #   2000-2099  Current payables
-#   2100-2199  Tax & clearing liabilities
+#   2100-2199  Tax & payroll liabilities
+#   2200-2299  Inventory payables / clearing
+#   2300-2399  Member liabilities (microfinance)
 #   2400-2499  Long-term / control liabilities
+#   2600-2699  Property liabilities (real estate)
 #   3000-3099  Equity
+#   3100-3199  Microfinance equity
+#   3200-3299  Property equity (real estate)
 #   4000-4099  Revenue (general services)
+#   4100-4199  Inventory revenue
+#   4200-4299  Interest & fee income (microfinance)
 #   4300-4399  Forex / finance income
+#   4400-4499  Rental & property income (real estate)
 #   5000-5099  Direct / cost-of-sales expenses
+#   5100-5199  Inventory direct costs
+#   5200-5299  Loan expenses (microfinance)
+#   5300-5399  Property expenses (real estate)
 #   5400-5499  Forex / finance expense
 #   6000-6099  Operating expenses
 #
-# Each tuple: (code, name, account_type, category)
+# Each tuple: (code, name, account_type, category, allows_manual_posting)
+# allows_manual_posting defaults to True; set False for aggregation-only accounts.
 # ---------------------------------------------------------------------------
 
 CORE_ACCOUNTS = [
     # --- Cash & liquid assets ---
+    # 1000: direct posting target for physical cash transactions.
+    # 1001/1010: aggregation parents for payment method accounts; never posted to directly.
     ("1000", "Cash on Hand", "asset", "cash_on_hand"),
     ("1001", "Cash and Cash Equivalent Control", "asset", "cash_and_cash_equivalent_control"),
     ("1010", "Electronic Money Control", "asset", "electronic_money_control"),
@@ -311,6 +343,19 @@ RESTRICTED_CONTROL_ACCOUNT_CATEGORIES = {
 
 
 # ---------------------------------------------------------------------------
+# Categories whose accounts are aggregation/reporting parents only.
+# Direct journal postings to these accounts are blocked (allows_manual_posting=False).
+# Individual payment-method accounts created via create_payment_method() sit
+# beneath these parents and are the actual posting targets.
+# ---------------------------------------------------------------------------
+
+AGGREGATION_ONLY_CATEGORIES = {
+    "cash_and_cash_equivalent_control",
+    "electronic_money_control",
+}
+
+
+# ---------------------------------------------------------------------------
 # Seeding helpers
 # ---------------------------------------------------------------------------
 
@@ -318,6 +363,7 @@ def _seed_accounts(accounts, branch, base_currency, account_map):
     for code, name, account_type, category in accounts:
         is_control = category in CONTROL_ACCOUNT_CATEGORIES
         is_restricted = category in RESTRICTED_CONTROL_ACCOUNT_CATEGORIES
+        is_aggregation_only = category in AGGREGATION_ONLY_CATEGORIES
         account, _ = Account.objects.get_or_create(
             code=code,
             branch=branch,
@@ -326,7 +372,8 @@ def _seed_accounts(accounts, branch, base_currency, account_map):
                 "account_type": account_type,
                 "category": category,
                 "currency": base_currency,
-                "allows_manual_posting": not is_restricted,
+                # Aggregation-only and restricted accounts both block direct posting.
+                "allows_manual_posting": not is_restricted and not is_aggregation_only,
                 "is_control_account": is_control,
             },
         )
@@ -397,3 +444,35 @@ def seed_default_chart_of_accounts(
     config.default_accounts = {**config.default_accounts, **account_map}
     config.save(update_fields=["default_accounts", "updated_at"])
     return config
+
+
+def seed_default_payment_methods(*, branch_id) -> None:
+    """
+    Create the standard set of payment methods for a branch.
+
+    Called by create_branch() after seed_default_chart_of_accounts().
+    Each method atomically creates its own GL account in the reserved range.
+    Safe to call multiple times — skips any method whose code already exists.
+    """
+    from apps.financials.services.payment_method_service import create_payment_method
+    from apps.financials.models import PaymentMethod
+
+    defaults = [
+        ("Cash", "cash", "cash"),
+        ("MTN Mobile Money", "mtn_mobile_money", "mobile_money"),
+        ("Airtel Mobile Money", "airtel_mobile_money", "mobile_money"),
+        ("Card / POS", "card", "card"),
+    ]
+
+    for name, code, account_type in defaults:
+        if PaymentMethod.objects.filter(branch_id=branch_id, code=code).exists():
+            continue
+        try:
+            create_payment_method(
+                branch_id=branch_id,
+                name=name,
+                code=code,
+                account_type=account_type,
+            )
+        except Exception:
+            pass

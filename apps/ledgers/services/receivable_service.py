@@ -5,7 +5,8 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from apps.ledgers.models import JournalLine
+from apps.ledgers.exceptions import PostingConfigurationError
+from apps.ledgers.models import JournalLine, SubLedgerAccount
 from apps.ledgers.services.forex_service import (
     calculate_realized_forex_gain_loss,
     post_forex_adjustment,
@@ -13,8 +14,23 @@ from apps.ledgers.services.forex_service import (
 from apps.ledgers.services.helpers import build_two_line_entry, create_and_post_journal, get_configured_account
 
 
+def _get_ar_subledger(customer_id: str, branch) -> SubLedgerAccount:
+    subledger = SubLedgerAccount.objects.filter(
+        entity_type="customer",
+        entity_id=customer_id,
+        ledger_purpose="Customer Receivable Ledger",
+    ).first()
+    if subledger is None:
+        raise PostingConfigurationError(
+            f"No AR subledger found for customer {customer_id}. "
+            "Ensure the customer was created with accounting enabled."
+        )
+    return subledger
+
+
 def create_receivable_invoice(*, invoice_id: str, posting_date: date, amount: Decimal, revenue_account_id: UUID, customer_id: str, branch: UUID | None, created_by_id: UUID | None, currency: str = "UGX"):
     receivable = get_configured_account("accounts_receivable", branch)
+    ar_subledger = _get_ar_subledger(customer_id, branch)
     return create_and_post_journal(
         reference=f"AR-{invoice_id}",
         journal_type="receivable_invoice",
@@ -35,6 +51,7 @@ def create_receivable_invoice(*, invoice_id: str, posting_date: date, amount: De
             party_type="customer",
             party_id=customer_id,
             rate_date=posting_date,
+            debit_subledger_account_id=ar_subledger.id,
         ),
         transaction_currency_code=currency,
     )
@@ -44,6 +61,7 @@ def allocate_customer_payment(*, payment_id: str, posting_date: date, amount: De
     receivable = get_configured_account("accounts_receivable", branch)
     if receivable_account_id is None:
         receivable_account_id = receivable.id
+    ar_subledger = _get_ar_subledger(customer_id, branch)
     journal = create_and_post_journal(
         reference=f"ARPAY-{payment_id}",
         journal_type="receivable_payment",
@@ -64,6 +82,7 @@ def allocate_customer_payment(*, payment_id: str, posting_date: date, amount: De
             party_type="customer",
             party_id=customer_id,
             rate_date=posting_date,
+            credit_subledger_account_id=ar_subledger.id,
         ),
         transaction_currency_code=currency,
     )

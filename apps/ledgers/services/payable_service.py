@@ -5,7 +5,8 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from apps.ledgers.models import JournalLine
+from apps.ledgers.exceptions import PostingConfigurationError
+from apps.ledgers.models import JournalLine, SubLedgerAccount
 from apps.ledgers.services.forex_service import (
     calculate_realized_forex_gain_loss,
     post_forex_adjustment,
@@ -13,8 +14,23 @@ from apps.ledgers.services.forex_service import (
 from apps.ledgers.services.helpers import build_two_line_entry, create_and_post_journal, get_configured_account
 
 
+def _get_ap_subledger(supplier_id: str, branch) -> SubLedgerAccount:
+    subledger = SubLedgerAccount.objects.filter(
+        entity_type="supplier",
+        entity_id=supplier_id,
+        ledger_purpose="Supplier Payable Ledger",
+    ).first()
+    if subledger is None:
+        raise PostingConfigurationError(
+            f"No AP subledger found for supplier {supplier_id}. "
+            "Ensure the supplier was created with accounting enabled."
+        )
+    return subledger
+
+
 def create_supplier_invoice(*, invoice_id: str, posting_date: date, amount: Decimal, expense_account_id: UUID, supplier_id: str, branch: UUID | None, created_by_id: UUID | None, currency: str = "UGX"):
     payable = get_configured_account("accounts_payable", branch)
+    ap_subledger = _get_ap_subledger(supplier_id, branch)
     return create_and_post_journal(
         reference=f"AP-{invoice_id}",
         journal_type="supplier_invoice",
@@ -35,6 +51,7 @@ def create_supplier_invoice(*, invoice_id: str, posting_date: date, amount: Deci
             party_type="supplier",
             party_id=supplier_id,
             rate_date=posting_date,
+            credit_subledger_account_id=ap_subledger.id,
         ),
         transaction_currency_code=currency,
     )
@@ -44,6 +61,7 @@ def allocate_supplier_payment(*, payment_id: str, posting_date: date, amount: De
     payable = get_configured_account("accounts_payable", branch)
     if payable_account_id is None:
         payable_account_id = payable.id
+    ap_subledger = _get_ap_subledger(supplier_id, branch)
     journal = create_and_post_journal(
         reference=f"APPAY-{payment_id}",
         journal_type="supplier_payment",
@@ -64,6 +82,7 @@ def allocate_supplier_payment(*, payment_id: str, posting_date: date, amount: De
             party_type="supplier",
             party_id=supplier_id,
             rate_date=posting_date,
+            debit_subledger_account_id=ap_subledger.id,
         ),
         transaction_currency_code=currency,
     )

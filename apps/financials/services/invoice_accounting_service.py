@@ -47,8 +47,11 @@ def post_customer_invoice(invoice) -> object:
 
 
 def _post_invoice_with_tax(invoice, customer, revenue_account, branch_id):
+    from apps.ledgers.services.receivable_service import _get_ar_subledger
+
     receivable = get_configured_account("accounts_receivable", branch_id)
     vat_output = get_configured_account("vat_output_control", branch_id)
+    ar_subledger = _get_ar_subledger(str(customer.id), branch_id)
 
     lines = [
         JournalLineInput(
@@ -60,6 +63,7 @@ def _post_invoice_with_tax(invoice, customer, revenue_account, branch_id):
             branch=branch_id,
             party_type="customer",
             party_id=str(customer.id),
+            subledger_account_id=ar_subledger.id,
         ),
         JournalLineInput(
             account_id=revenue_account.id,

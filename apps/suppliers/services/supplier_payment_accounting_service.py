@@ -8,7 +8,6 @@ from uuid import UUID
 from django.db import transaction
 
 from apps.ledgers.constants import DEFAULT_CURRENCY
-from apps.ledgers.services.helpers import get_configured_account
 from apps.ledgers.services.journal_service import reverse_journal_entry
 from apps.ledgers.services.payable_service import allocate_supplier_payment
 from apps.ledgers.utils.currency import get_exchange_rate
@@ -23,13 +22,13 @@ def post_supplier_payment(
     supplier,
     amount: Decimal,
     payment_date: date,
-    payment_method: str,
+    payment_method,
     branch_id: UUID | None,
     created_by_id: UUID | None,
     currency: str = DEFAULT_CURRENCY,
     invoice_date: date | None = None,
 ) -> object:
-    cash_account = _resolve_cash_account(payment_method, branch_id)
+    cash_account = payment_method.account
 
     original_foreign_amount = None
     original_exchange_rate = None
@@ -54,21 +53,6 @@ def post_supplier_payment(
         original_foreign_amount=original_foreign_amount,
         original_exchange_rate=original_exchange_rate,
     )
-
-
-PAYMENT_METHOD_ACCOUNT_MAP = {
-    "cash": "cash_on_hand",
-    "card": "cash_and_cash_equivalent_control",
-    "mobile_money": "electronic_money_control",
-    "bank_transfer": "cash_and_cash_equivalent_control",
-    "cheque": "cash_and_cash_equivalent_control",
-    "other": "cash_and_cash_equivalent_control",
-}
-
-
-def _resolve_cash_account(method: str, branch: UUID | None):
-    account_key = PAYMENT_METHOD_ACCOUNT_MAP.get(method, "cash_and_cash_equivalent_control")
-    return get_configured_account(account_key, branch)
 
 
 @transaction.atomic
