@@ -1,7 +1,14 @@
+import logging
+
+from django.db import transaction
+
 from apps.organization.models import Organization
 from apps.organization.services import resolve_branch_for_user
 
-from .models import Customer, CustomerFeedback
+from ..models import Customer, CustomerFeedback
+from .customer_accounting_service import create_customer_subledger
+
+logger = logging.getLogger(__name__)
 
 
 def customers_visible_queryset(user):
@@ -29,9 +36,10 @@ def feedback_visible_queryset(user, customer_id=None):
     return qs
 
 
+@transaction.atomic
 def create_customer(user, data):
     branch, organization = resolve_branch_for_user(user, data['branch_id'])
-    return Customer.objects.create(
+    customer = Customer.objects.create(
         organization=organization,
         branch=branch,
         first_name=data['first_name'],
@@ -40,6 +48,13 @@ def create_customer(user, data):
         email=data.get('email'),
         is_active=data.get('is_active', True),
     )
+
+    try:
+        create_customer_subledger(customer)
+    except Exception:
+        logger.exception("Failed to create AR subledger for customer %s", customer.id)
+        raise
+    return customer
 
 
 def update_customer(instance, user, data, partial=False):

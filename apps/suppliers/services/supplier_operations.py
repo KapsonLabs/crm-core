@@ -1,3 +1,5 @@
+import logging
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
@@ -10,7 +12,11 @@ from apps.jobs.services import job_queryset_for_user, products_visible_for_user
 from apps.organization.models import Organization
 from apps.organization.services import resolve_branch_for_user
 
-from .models import LocalPurchaseOrder, LocalPurchaseOrderItem, Supplier
+from ..models import LocalPurchaseOrder, LocalPurchaseOrderItem, Supplier
+from .supplier_accounting_service import create_supplier_subledger
+from .supplier_invoice_accounting_service import post_supplier_invoice, reverse_supplier_invoice
+
+logger = logging.getLogger(__name__)
 
 
 def suppliers_visible_queryset(user):
@@ -89,6 +95,7 @@ def _item_line_total(quantity: Decimal, unit_price: Decimal) -> Decimal:
     return (quantity * unit_price).quantize(Decimal('0.01'))
 
 
+@transaction.atomic
 def create_supplier(user, data):
     branch_id = data.get('branch_id')
     if branch_id:
@@ -98,7 +105,7 @@ def create_supplier(user, data):
             raise ValueError('branch_id is required when your account has no organization.')
         organization = Organization.objects.get(pk=user.organization_id)
         branch = None
-    return Supplier.objects.create(
+    supplier = Supplier.objects.create(
         organization=organization,
         branch=branch,
         name=data['name'],
@@ -111,6 +118,14 @@ def create_supplier(user, data):
         notes=data.get('notes') or '',
         is_active=data.get('is_active', True),
     )
+
+    try:
+        create_supplier_subledger(supplier)
+    except Exception:
+        logger.exception("Failed to create AP subledger for supplier %s", supplier.id)
+        raise
+
+    return supplier
 
 
 def update_supplier(instance, user, data, partial=False):
@@ -214,10 +229,6 @@ def create_lpo(user, data):
 
 @transaction.atomic
 def create_lpo_with_items(user, validated_data):
-    """
-    Create LPO header and all line items in one transaction.
-    validated_data contains header keys plus ``items`` (list of validated line dicts).
-    """
     data = validated_data.copy()
     items_data = [dict(item) for item in data.pop('items')]
     lpo = create_lpo(user, data)
@@ -450,7 +461,6 @@ def patch_local_purchase_order(lpo, user, validated_data, partial=True):
 
 
 def _sync_receipt_status(lpo):
-    """Update header status from active lines' receipt and delivered_status (post-receive)."""
     items = list(active_lpo_items_qs(lpo))
     if not items:
         return lpo
@@ -476,10 +486,6 @@ def _sync_receipt_status(lpo):
 
 @transaction.atomic
 def receive_lpo_lines(lpo, user, lines_payload):
-    """
-    lines_payload: list of {'item_id': uuid, 'quantity_received': Decimal or str}
-    Sets quantity_received per line to the supplied absolute totals.
-    """
     if lpo.status not in (
         LocalPurchaseOrder.STATUS_ISSUED,
         LocalPurchaseOrder.STATUS_IN_TRANSIT,
@@ -516,12 +522,28 @@ def receive_lpo_lines(lpo, user, lines_payload):
         item.save(update_fields=('quantity_received', 'delivered_status', 'updated_at'))
 
     lpo.refresh_from_db()
+    old_status = lpo.status
     _sync_receipt_status(lpo)
+    lpo.refresh_from_db()
+
+    if lpo.status == LocalPurchaseOrder.STATUS_RECEIVED and old_status != LocalPurchaseOrder.STATUS_RECEIVED:
+        _post_lpo_accounting(lpo)
+
     return lpo
 
 
+def _post_lpo_accounting(lpo):
+    if lpo.total <= Decimal('0.00'):
+        return
+    try:
+        post_supplier_invoice(lpo)
+    except Exception:
+        logger.exception("Failed to post accounting for LPO %s", lpo.lpo_number or lpo.id)
+        raise
+
+
+@transaction.atomic
 def transition_lpo_status(lpo, user, new_status):
-    """Explicit workflow transitions."""
     vis = lpos_visible_queryset(user)
     if not vis.filter(pk=lpo.pk).exists():
         raise ValueError('LPO not found or not accessible.')
@@ -557,6 +579,18 @@ def transition_lpo_status(lpo, user, new_status):
             LocalPurchaseOrder.STATUS_IN_TRANSIT,
         ):
             raise ValueError('This LPO cannot be cancelled in its current state.')
+
+        if old != LocalPurchaseOrder.STATUS_DRAFT:
+            try:
+                reverse_supplier_invoice(
+                    lpo,
+                    reversal_date=date.today(),
+                    created_by_id=user.id,
+                    reason=f"LPO {lpo.lpo_number or lpo.id} cancelled",
+                )
+            except ValueError:
+                logger.warning("No journal to reverse for LPO %s", lpo.lpo_number or lpo.id)
+
         lpo.status = LocalPurchaseOrder.STATUS_CANCELLED
         lpo.save(update_fields=('status', 'updated_at'))
         return lpo
@@ -574,6 +608,9 @@ def transition_lpo_status(lpo, user, new_status):
         lpo.status = LocalPurchaseOrder.STATUS_RECEIVED
         lpo.delivered_at = timezone.now()
         lpo.save(update_fields=('status', 'delivered_at', 'updated_at'))
+
+        _post_lpo_accounting(lpo)
+
         return lpo
 
     raise ValueError(f'Transition to {new_status} is not supported via this action.')

@@ -1,13 +1,22 @@
+import logging
 from decimal import Decimal
 from datetime import date
 
+from django.db import transaction
 from django.db.models import Max, Q, Sum
 from django.utils import timezone
 
 from apps.jobs.services import job_queryset_for_user
 from apps.organization.services import resolve_branch_for_user
 
-from .models import Invoice, InvoicePayment, Requisition
+from ..models import Invoice, InvoicePayment, Requisition
+from .customer_payment_accounting_service import (
+    post_customer_payment,
+    reverse_customer_payment,
+)
+from .invoice_accounting_service import post_customer_invoice, reverse_customer_invoice
+
+logger = logging.getLogger(__name__)
 
 
 def invoices_for_user(user):
@@ -50,10 +59,11 @@ def _next_invoice_number(organization_id):
     return f'{prefix}{n:04d}'
 
 
+@transaction.atomic
 def create_invoice(user, data):
 
     job_id = data['job_id']
-    job = job_queryset_for_user(user).select_related('organization', 'branch').get(pk=job_id)
+    job = job_queryset_for_user(user).select_related('organization', 'branch', 'customer').get(pk=job_id)
 
     branch_id = data.get('branch_id')
     if branch_id is not None:
@@ -79,7 +89,7 @@ def create_invoice(user, data):
         issued_at = date.today()
     due_at = data.get('due_at')
 
-    return Invoice.objects.create(
+    invoice = Invoice.objects.create(
         job=job,
         organization=organization,
         branch=branch,
@@ -94,6 +104,15 @@ def create_invoice(user, data):
         due_at=due_at,
         notes=notes,
     )
+
+    if status != Invoice.STATUS_DRAFT and total > Decimal('0.00'):
+        try:
+            post_customer_invoice(invoice)
+        except Exception:
+            logger.exception("Failed to post accounting for invoice %s", invoice.invoice_number)
+            raise
+
+    return invoice
 
 
 def update_invoice(instance, user, data, partial=False):
@@ -116,9 +135,22 @@ def update_invoice(instance, user, data, partial=False):
     return instance
 
 
+@transaction.atomic
 def void_invoice(instance, user):
     if not user.is_job_manager:
         raise PermissionError('Only administrators or supervisors can void invoices.')
+
+    if instance.status not in (Invoice.STATUS_DRAFT, Invoice.STATUS_VOID):
+        try:
+            reverse_customer_invoice(
+                instance,
+                reversal_date=date.today(),
+                created_by_id=user.id,
+                reason=f"Invoice {instance.invoice_number} voided",
+            )
+        except ValueError:
+            logger.warning("No journal to reverse for invoice %s", instance.invoice_number)
+
     instance.status = Invoice.STATUS_VOID
     instance.save(update_fields=['status', 'updated_at'])
     return instance
@@ -139,9 +171,10 @@ def _refresh_invoice_payment_status(invoice):
     invoice.save(update_fields=['status', 'updated_at'])
 
 
+@transaction.atomic
 def record_payment(user, data):
     invoice_id = data['invoice_id']
-    invoice = Invoice.objects.select_related('organization').get(pk=invoice_id)
+    invoice = Invoice.objects.select_related('organization', 'job__customer').get(pk=invoice_id)
     if not invoices_for_user(user).filter(pk=invoice.pk).exists():
         raise PermissionError('Invoice not found or not accessible.')
     if invoice.status == Invoice.STATUS_VOID:
@@ -158,6 +191,13 @@ def record_payment(user, data):
         reference=reference,
         recorded_by=user,
     )
+
+    try:
+        post_customer_payment(pay)
+    except Exception:
+        logger.exception("Failed to post accounting for payment %s", pay.id)
+        raise
+
     _refresh_invoice_payment_status(invoice)
     invoice.refresh_from_db()
     return pay
@@ -173,12 +213,24 @@ def record_payment_for_invoice(invoice, user, data):
     return record_payment(user, payload)
 
 
+@transaction.atomic
 def delete_payment(payment, user):
     if not user.is_job_manager:
         raise PermissionError('Only administrators or supervisors can delete payments.')
     invoice = payment.invoice
     if not invoices_for_user(user).filter(pk=invoice.pk).exists():
         raise PermissionError('Not accessible.')
+
+    try:
+        reverse_customer_payment(
+            payment,
+            reversal_date=date.today(),
+            created_by_id=user.id,
+            reason=f"Payment {payment.id} deleted",
+        )
+    except ValueError:
+        logger.warning("No journal to reverse for payment %s", payment.id)
+
     payment.delete()
     _refresh_invoice_payment_status(invoice)
     invoice.refresh_from_db()
