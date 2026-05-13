@@ -87,10 +87,26 @@ def generate_subledger_code(*, prefix: str, entity_reference: str) -> str:
 
 
 def assign_control_account(*, control_account_key: str, branch: UUID | None) -> ControlAccount:
-    gl_account = AccountRepository.get_by_code(
-        code=AccountRepository.get_configuration(branch).default_accounts.get(control_account_key, ""),
-        branch=branch,
-    )
+    try:
+        config = AccountRepository.get_configuration(branch)
+    except Exception as exc:
+        raise PostingConfigurationError(
+            f"No AccountingConfiguration found for branch={branch}. "
+            "Run 'python manage.py seed_default_chart' first."
+        ) from exc
+    account_code = config.default_accounts.get(control_account_key, "")
+    if not account_code:
+        raise PostingConfigurationError(
+            f"Account key '{control_account_key}' is not configured in default_accounts "
+            f"(branch={branch}). Run 'python manage.py seed_default_chart' first."
+        )
+    try:
+        gl_account = AccountRepository.get_by_code(code=account_code, branch=branch)
+    except Account.DoesNotExist:
+        raise PostingConfigurationError(
+            f"GL account with code '{account_code}' (key '{control_account_key}') "
+            f"does not exist for branch={branch}. Re-run 'python manage.py seed_default_chart'."
+        )
     control, _ = ControlAccount.objects.get_or_create(
         gl_account=gl_account,
         defaults={

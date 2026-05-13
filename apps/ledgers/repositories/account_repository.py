@@ -14,10 +14,13 @@ class AccountRepository:
 
     @staticmethod
     def get_by_code(code: str, branch: UUID | None = None) -> Account:
-        queryset = Account.objects.filter(code=code)
         if branch is not None:
-            queryset = queryset.filter(branch=branch)
-        return queryset.get()
+            account = Account.objects.filter(code=code, branch=branch).first()
+            if account:
+                return account
+            # Fall back to the global (branch-agnostic) account
+            return Account.objects.filter(code=code, branch__isnull=True).get()
+        return Account.objects.filter(code=code, branch__isnull=True).get()
 
     @staticmethod
     def list_postable(branch: UUID | None = None) -> Iterable[Account]:
