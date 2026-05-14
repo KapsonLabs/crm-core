@@ -6,6 +6,9 @@ from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from decimal import Decimal
+from django.db.models import Sum
+from apps.ledgers.models import Account
 
 from apps.ledgers.api.permissions import IsAccountingManager, IsAccountingViewer
 from apps.ledgers.api.serializers import (
@@ -110,22 +113,115 @@ class AccountDetailView(APIView):
 # Control Accounts
 # ---------------------------------------------------------------------------
 
+def _parse_date(request, key):
+    from datetime import date as date_type
+    val = request.query_params.get(key)
+    if val:
+        try:
+            return date_type.fromisoformat(val)
+        except ValueError:
+            pass
+    return None
+
+
+def _gl_balance_map(gl_account_ids, branch_id, as_of_date):
+    """Returns {gl_account_id: signed_balance} for a batch of GL account IDs."""
+
+    qs = LedgerEntry.objects.filter(account_id__in=gl_account_ids)
+    if branch_id:
+        qs = qs.filter(branch=branch_id)
+    if as_of_date:
+        qs = qs.filter(date__lte=as_of_date)
+
+    raw = {
+        row["account_id"]: (row["d"], row["c"])
+        for row in qs.values("account_id").annotate(
+            d=Sum("debit_base", default=Decimal("0.00")),
+            c=Sum("credit_base", default=Decimal("0.00")),
+        )
+    }
+    normal_map = {
+        a.id: a.normal_balance
+        for a in Account.objects.filter(id__in=gl_account_ids).only("id", "account_type")
+    }
+    result = {}
+    for aid in gl_account_ids:
+        d, c = raw.get(aid, (Decimal("0"), Decimal("0")))
+        result[str(aid)] = str(d - c if normal_map.get(aid) == "debit" else c - d)
+    return result
+
+
+def _subledger_balance_map(subledger_accounts, branch_id, as_of_date):
+    """
+    Returns {str(subledger_account_id): signed_balance_str}.
+
+    Sign follows the parent control account's GL account normal_balance:
+      debit-normal (AR, loans)  → debit - credit
+      credit-normal (AP, member savings) → credit - debit
+    """
+
+    subledger_ids = [sl.id for sl in subledger_accounts]
+    if not subledger_ids:
+        return {}
+
+    qs = SubLedgerEntry.objects.filter(subledger_account_id__in=subledger_ids)
+    if branch_id:
+        qs = qs.filter(branch=branch_id)
+    if as_of_date:
+        qs = qs.filter(date__lte=as_of_date)
+
+    raw = {
+        row["subledger_account_id"]: (row["d"], row["c"])
+        for row in qs.values("subledger_account_id").annotate(
+            d=Sum("debit_base", default=Decimal("0.00")),
+            c=Sum("credit_base", default=Decimal("0.00")),
+        )
+    }
+    normal_map = {
+        sl.id: sl.parent_control_account.gl_account.normal_balance
+        for sl in subledger_accounts
+    }
+    result = {}
+    for sl in subledger_accounts:
+        d, c = raw.get(sl.id, (Decimal("0"), Decimal("0")))
+        normal = normal_map.get(sl.id, "debit")
+        result[str(sl.id)] = str(d - c if normal == "debit" else c - d)
+    return result
+
+
 class ControlAccountListView(APIView):
     permission_classes = [IsAccountingViewer]
 
     def get(self, request):
+        branch_id = request.query_params.get("branch_id")
+        as_of_date = _parse_date(request, "as_of_date")
+
         qs = ControlAccount.objects.select_related("gl_account", "currency").order_by("code")
-        return _ok(ControlAccountSerializer(qs, many=True).data)
+        if branch_id:
+            qs = qs.filter(branch=branch_id)
+
+        controls = list(qs)
+        gl_ids = [ca.gl_account_id for ca in controls]
+        balance_map = _gl_balance_map(gl_ids, branch_id, as_of_date)
+
+        serialized = ControlAccountSerializer(controls, many=True).data
+        data = [{**item, "balance": balance_map.get(str(item["gl_account"]), "0")} for item in serialized]
+        return _ok(data)
 
 
 class ControlAccountDetailView(APIView):
     permission_classes = [IsAccountingViewer]
 
     def get(self, request, pk):
+        branch_id = request.query_params.get("branch_id")
+        as_of_date = _parse_date(request, "as_of_date")
+
         obj = get_object_or_404(
             ControlAccount.objects.select_related("gl_account", "currency"), pk=pk
         )
-        return _ok(ControlAccountSerializer(obj).data)
+        balance_map = _gl_balance_map([obj.gl_account_id], branch_id, as_of_date)
+        data = {**ControlAccountSerializer(obj).data, "balance": balance_map.get(str(obj.gl_account_id), "0")}
+        return _ok(data)
 
 
 # ---------------------------------------------------------------------------
@@ -136,29 +232,48 @@ class SubLedgerAccountListView(APIView):
     permission_classes = [IsAccountingViewer]
 
     def get(self, request):
+        branch_id = request.query_params.get("branch_id")
+        as_of_date = _parse_date(request, "as_of_date")
+
         qs = SubLedgerAccount.objects.select_related(
-            "parent_control_account", "currency", "gl_account"
+            "parent_control_account__gl_account", "currency", "gl_account"
         ).order_by("account_code")
+        if branch_id:
+            qs = qs.filter(branch=branch_id)
+        control_account_id = request.query_params.get("control_account_id")
+        if control_account_id:
+            qs = qs.filter(parent_control_account_id=control_account_id)
         entity_type = request.query_params.get("entity_type")
         if entity_type:
             qs = qs.filter(entity_type=entity_type)
         entity_id = request.query_params.get("entity_id")
         if entity_id:
             qs = qs.filter(entity_id=entity_id)
-        return _ok(SubLedgerAccountSerializer(qs, many=True).data)
+
+        accounts = list(qs)
+        balance_map = _subledger_balance_map(accounts, branch_id, as_of_date)
+
+        serialized = SubLedgerAccountSerializer(accounts, many=True).data
+        data = [{**item, "balance": balance_map.get(str(item["id"]), "0")} for item in serialized]
+        return _ok(data)
 
 
 class SubLedgerAccountDetailView(APIView):
     permission_classes = [IsAccountingViewer]
 
     def get(self, request, pk):
+        branch_id = request.query_params.get("branch_id")
+        as_of_date = _parse_date(request, "as_of_date")
+
         obj = get_object_or_404(
             SubLedgerAccount.objects.select_related(
-                "parent_control_account", "currency", "gl_account"
+                "parent_control_account__gl_account", "currency", "gl_account"
             ),
             pk=pk,
         )
-        return _ok(SubLedgerAccountSerializer(obj).data)
+        balance_map = _subledger_balance_map([obj], branch_id, as_of_date)
+        data = {**SubLedgerAccountSerializer(obj).data, "balance": balance_map.get(str(obj.id), "0")}
+        return _ok(data)
 
 
 # ---------------------------------------------------------------------------
