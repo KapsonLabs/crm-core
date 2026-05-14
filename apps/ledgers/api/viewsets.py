@@ -44,7 +44,9 @@ from apps.ledgers.models import (
     SubLedgerAccount,
     SubLedgerEntry,
 )
+from apps.ledgers.services.coa_service import get_account_drill_down, get_chart_with_balances
 from apps.ledgers.services.journal_service import post_journal_entry, reverse_journal_entry
+from apps.ledgers.utils.ledger import generate_general_ledger
 
 
 def _ok(data, http_status=status.HTTP_200_OK):
@@ -523,3 +525,153 @@ class InventoryAccrualDetailView(APIView):
     def get(self, request, pk):
         obj = get_object_or_404(InventoryAccrual, pk=pk)
         return _ok(InventoryAccrualSerializer(obj).data)
+
+
+# ---------------------------------------------------------------------------
+# Chart of Accounts
+# ---------------------------------------------------------------------------
+
+class ChartOfAccountsView(APIView):
+    """
+    Full chart of accounts with aggregated balances.
+
+    Query params:
+      branch_id            — UUID, defaults to the authenticated user's branch
+      as_of_date           — YYYY-MM-DD, cumulative balance up to this date
+      start_date           — YYYY-MM-DD, period start (P&L mode)
+      end_date             — YYYY-MM-DD, period end (P&L mode)
+      account_type         — filter: asset | liability | equity | income | expense
+      with_zero_balances   — true (default) | false
+
+    Balance modes:
+      as_of_date only      → cumulative (B/S view)
+      start_date + end_date → period-scoped (P&L view)
+      all three            → mixed: cumulative for B/S types, period for P&L types
+      none                 → cumulative as of today
+    """
+    permission_classes = [IsAccountingViewer]
+
+    def get(self, request):
+        from datetime import date as date_type
+
+        branch_id = request.query_params.get("branch_id") or getattr(request.user, "branch_id", None)
+
+        def _parse_date(key):
+            val = request.query_params.get(key)
+            if val:
+                try:
+                    return date_type.fromisoformat(val)
+                except ValueError:
+                    return None
+            return None
+
+        as_of_date = _parse_date("as_of_date")
+        start_date = _parse_date("start_date")
+        end_date = _parse_date("end_date")
+        account_type = request.query_params.get("account_type") or None
+        include_zeros = request.query_params.get("with_zero_balances", "true").lower() != "false"
+
+        data = get_chart_with_balances(
+            branch=branch_id,
+            as_of_date=as_of_date,
+            start_date=start_date,
+            end_date=end_date,
+            account_type=account_type,
+            include_zero_balances=include_zeros,
+        )
+
+        return _ok({
+            "branch_id": str(branch_id) if branch_id else None,
+            "as_of_date": str(as_of_date or date_type.today()),
+            "start_date": str(start_date) if start_date else None,
+            "end_date": str(end_date) if end_date else None,
+            "count": len(data),
+            "accounts": data,
+        })
+
+
+class AccountDrillDownView(APIView):
+    """
+    Single account node + its direct children, each with aggregated balance.
+
+    Accepts the same date query params as ChartOfAccountsView.
+    Use this to navigate the tree: click a parent → see its breakdown.
+    Children with their own children will have children_count > 0 —
+    drill into them with another request to this endpoint.
+    """
+    permission_classes = [IsAccountingViewer]
+
+    def get(self, request, pk):
+        from datetime import date as date_type
+
+        branch_id = request.query_params.get("branch_id") or getattr(request.user, "branch_id", None)
+
+        def _parse_date(key):
+            val = request.query_params.get(key)
+            if val:
+                try:
+                    return date_type.fromisoformat(val)
+                except ValueError:
+                    return None
+            return None
+
+        result = get_account_drill_down(
+            account_id=pk,
+            branch=branch_id,
+            as_of_date=_parse_date("as_of_date"),
+            start_date=_parse_date("start_date"),
+            end_date=_parse_date("end_date"),
+        )
+        if not result:
+            return _bad("Account not found.", status.HTTP_404_NOT_FOUND)
+        return _ok(result)
+
+
+class AccountLedgerLinesView(APIView):
+    """
+    Journal lines (ledger entries) for a single account.
+
+    Query params:
+      branch_id   — UUID
+      start_date  — YYYY-MM-DD
+      end_date    — YYYY-MM-DD
+    """
+    permission_classes = [IsAccountingViewer]
+
+    def get(self, request, pk):
+        from datetime import date as date_type
+
+        account = get_object_or_404(Account, pk=pk)
+        branch_id = request.query_params.get("branch_id") or getattr(request.user, "branch_id", None)
+
+        def _parse_date(key):
+            val = request.query_params.get(key)
+            if val:
+                try:
+                    return date_type.fromisoformat(val)
+                except ValueError:
+                    return None
+            return None
+
+        entries = generate_general_ledger(
+            account_id=account.id,
+            branch=branch_id,
+            start_date=_parse_date("start_date"),
+            end_date=_parse_date("end_date"),
+        )
+
+        # Prefetch related for serializer efficiency
+        entry_qs = LedgerEntry.objects.filter(
+            pk__in=[e.id for e in entries]
+        ).select_related("account", "currency", "journal_line", "journal_line__journal_entry").order_by("date", "created_at")
+
+        return _ok({
+            "account": {
+                "id": str(account.id),
+                "code": account.code,
+                "name": account.name,
+                "account_type": account.account_type,
+            },
+            "count": entry_qs.count(),
+            "lines": LedgerEntrySerializer(entry_qs, many=True).data,
+        })

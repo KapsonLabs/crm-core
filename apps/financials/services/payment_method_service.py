@@ -33,6 +33,19 @@ ACCOUNT_TYPE_CATEGORY = {
     ACCOUNT_TYPE_CHEQUE: "cheque_account",
 }
 
+# Parent GL account code that each payment-method type rolls up into.
+# These parents are seeded as aggregation-only accounts (allows_manual_posting=False).
+#   bank, card, cheque → 1001 (Cash and Cash Equivalent Control)
+#   mobile_money       → 1010 (Electronic Money Control)
+#   cash               → no parent (1000 is itself a leaf)
+ACCOUNT_TYPE_PARENT_CODE = {
+    ACCOUNT_TYPE_BANK: "1001",
+    ACCOUNT_TYPE_CARD: "1001",
+    ACCOUNT_TYPE_CHEQUE: "1001",
+    ACCOUNT_TYPE_MOBILE_MONEY: "1010",
+    ACCOUNT_TYPE_CASH: None,
+}
+
 
 def _next_payment_account_code(lo: int, hi: int) -> str:
     from apps.ledgers.models import Account
@@ -75,6 +88,11 @@ def create_payment_method(
         lo, hi = ACCOUNT_TYPE_CODE_RANGE[account_type]
         next_code = _next_payment_account_code(lo, hi)
         base_currency = AccountRepository.get_base_currency()
+        parent_code = ACCOUNT_TYPE_PARENT_CODE.get(account_type)
+        parent_account = (
+            AccountRepository.get_by_code(parent_code, branch=branch_id)
+            if parent_code else None
+        )
         gl_account = Account.objects.create(
             code=next_code,
             name=name,
@@ -82,6 +100,7 @@ def create_payment_method(
             category=ACCOUNT_TYPE_CATEGORY[account_type],
             currency=base_currency,
             branch=branch_id,
+            parent=parent_account,
             allows_manual_posting=True,
             is_control_account=False,
         )

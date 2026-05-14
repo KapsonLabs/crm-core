@@ -2,7 +2,10 @@ from django.urls import path
 
 from apps.ledgers.api.viewsets import (
     AccountDetailView,
+    AccountDrillDownView,
+    AccountLedgerLinesView,
     AccountListCreateView,
+    ChartOfAccountsView,
     ControlAccountDetailView,
     ControlAccountListView,
     CurrencyDetailView,
@@ -38,6 +41,11 @@ from apps.ledgers.api.viewsets import (
 )
 
 urlpatterns = [
+    # Chart of Accounts (with balances + drill-down)
+    path("chart/", ChartOfAccountsView.as_view(), name="ledger-chart"),
+    path("chart/<uuid:pk>/", AccountDrillDownView.as_view(), name="ledger-chart-drilldown"),
+    path("accounts/<uuid:pk>/lines/", AccountLedgerLinesView.as_view(), name="ledger-account-lines"),
+
     # Accounts
     path("accounts/", AccountListCreateView.as_view(), name="ledger-account-list"),
     path("accounts/<uuid:pk>/", AccountDetailView.as_view(), name="ledger-account-detail"),
